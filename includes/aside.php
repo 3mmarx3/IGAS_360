@@ -19,12 +19,7 @@
         </button>
 
         <div class="pt-6">
-            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] mb-2 px-6" style="color: #555350;">Main</p>
-            <nav class="px-3">
-                <a href="/IGAS_360/modules/main/command_center.php" class="nav-row <?= (isset($active_page) && $active_page == 'command_center') ? 'active' : '' ?> flex items-center justify-between px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
-                    <span class="flex items-center gap-3"><i data-lucide="layout-grid" class="w-[16px] h-[16px]"></i>Command Center</span>
-                </a>
-            </nav>
+    
 
             <p class="text-[10px] font-semibold uppercase tracking-[0.16em] mb-2 px-6 mt-7" style="color: #555350;">CRM &amp; Sales</p>
             <nav class="px-3">

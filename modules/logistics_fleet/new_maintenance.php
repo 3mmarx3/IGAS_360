@@ -92,7 +92,7 @@ $new_ticket_id = 'MNT-' . rand(4025, 4999);
 
         <div class="flex-1 overflow-auto px-8 py-7">
 
-            <div class="max-w-4xl">
+            <div >
                 <div class="mb-7">
                     <div class="flex items-center gap-2 mb-2">
                         <a href="maintenance_fuel.php" class="text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors" style="color: var(--mute); text-decoration: none;">Maintenance Registry</a>
