@@ -1,4 +1,4 @@
-توثيق نظام I-GAS Enterprise (Enterprise Resource Planning)
+<!-- توثيق نظام I-GAS Enterprise (Enterprise Resource Planning)
 1. قسم الإدارة العليا (Main Module)
 📄 command_center.php (مركز القيادة):
 
@@ -120,4 +120,4 @@
 
 التحكم في صلاحيات المستخدمين (Roles).
 
-إضافة أنواع سيارات، غازات، أو ضبط معادلات التحويل الحسابية في النظام.
+إضافة أنواع سيارات، غازات، أو ضبط معادلات التحويل الحسابية في النظام. -->
