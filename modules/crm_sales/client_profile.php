@@ -1,36 +1,59 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'clients';
 $base_url    = '../../'; 
-$breadcrumb  = ['I-GAS', 'CRM & Accounts', 'Clients Directory', 'SABIC Petrochemicals'];
+
+$reference_id = $_GET['id'] ?? 'ACC-2984';
+
+$stmt = $pdo->prepare("SELECT * FROM partners WHERE reference_id = ? AND partner_type = 'client'");
+$stmt->execute([$reference_id]);
+$db_client = $stmt->fetch();
+
+if (!$db_client) {
+    die("Client not found in system.");
+}
+
+$words = explode(" ", $db_client['company_name']);
+$initials = "";
+foreach ($words as $w) {
+    $initials .= mb_substr($w, 0, 1, 'UTF-8');
+}
+$initials = mb_strtoupper(mb_substr($initials, 0, 2, 'UTF-8'));
+
+$stmt_orders = $pdo->prepare("SELECT order_number AS `order`, specs, order_date AS `date`, status, total_value AS `value` FROM purchase_orders WHERE client_id = ? ORDER BY order_date DESC LIMIT 10");
+$stmt_orders->execute([$db_client['id']]);
+$orders = $stmt_orders->fetchAll();
+
+$stmt_stats = $pdo->prepare("SELECT COUNT(*) as o_count, AVG(total_value) as o_avg FROM purchase_orders WHERE client_id = ?");
+$stmt_stats->execute([$db_client['id']]);
+$stats = $stmt_stats->fetch();
+
+$stmt_act = $pdo->prepare("SELECT activity_text, activity_time, author FROM client_activities WHERE client_id = ? ORDER BY activity_time DESC LIMIT 10");
+$stmt_act->execute([$db_client['id']]);
+$activities = $stmt_act->fetchAll();
 
 $client = [
-    'id'           => 'ACC-1042',
-    'name'         => 'SABIC Petrochemicals',
-    'initials'     => 'SP',
-    'type'         => 'Corporate',
-    'segment'      => 'Industrial Gas',
-    'status'       => 'active',
-    'since'        => '2019-03-11',
-    'contact_name' => 'Faisal Al-Rashid',
-    'contact_role' => 'Procurement Manager',
-    'email'        => 'f.alrashid@sabic-procure.com',
-    'phone'        => '+966 11 401 2200',
-    'address'      => 'Industrial City 2, Jubail, Saudi Arabia',
-    'tax_id'       => '300012345600003',
-    'lifetime'     => 1842000,
-    'balance'      => 45000,
-    'orders_count' => 58,
-    'avg_order'    => 31758,
+    'id'           => $db_client['reference_id'],
+    'name'         => $db_client['company_name'],
+    'initials'     => $initials,
+    'type'         => $db_client['entity_type'],
+    'segment'      => $db_client['segment'],
+    'status'       => $db_client['status'],
+    'since'        => $db_client['created_at'],
+    'contact_name' => $db_client['contact_first_name'] . ' ' . $db_client['contact_last_name'],
+    'contact_role' => $db_client['job_title'],
+    'email'        => $db_client['email'],
+    'phone'        => $db_client['phone'],
+    'address'      => $db_client['address'] . ', ' . $db_client['city'] . ', ' . $db_client['country'],
+    'tax_id'       => $db_client['tax_id'],
+    'lifetime'     => $db_client['lifetime_value'],
+    'balance'      => $db_client['balance_due'],
+    'orders_count' => $stats['o_count'] ?? 0,
+    'avg_order'    => $stats['o_avg'] ?? 0,
 ];
 
-$orders = [
-    ['order' => '7742', 'specs' => 'LIQ. O₂ / 20T',     'date' => '2026-06-20', 'status' => 'processing', 'value' => 45000],
-    ['order' => '7690', 'specs' => 'LIQ. N₂ / 15T',     'date' => '2026-06-02', 'status' => 'delivered',  'value' => 33200],
-    ['order' => '7654', 'specs' => 'LIQ. O₂ / 20T',     'date' => '2026-05-18', 'status' => 'delivered',  'value' => 45000],
-    ['order' => '7588', 'specs' => 'C₂H₂ 40L / ×80',    'date' => '2026-04-29', 'status' => 'delivered',  'value' => 14600],
-    ['order' => '7521', 'specs' => 'LIQ. O₂ / 20T',     'date' => '2026-04-09', 'status' => 'delivered',  'value' => 45000],
-    ['order' => '7460', 'specs' => 'AR 50L / ×60',      'date' => '2026-03-22', 'status' => 'delivered',  'value' => 8700],
-];
+$breadcrumb  = ['I-GAS', 'CRM & Accounts', 'Clients Directory', $client['name']];
 
 $statusStyles = [
     'active'     => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Active'],
@@ -43,7 +66,7 @@ $statusStyles = [
     'draft'      => ['bg' => 'transparent', 'fg' => '#A6A39D', 'dot' => 'transparent', 'label' => 'Draft'],
 ];
 
-$cs = $statusStyles[$client['status']];
+$cs = $statusStyles[$client['status']] ?? $statusStyles['inactive'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -266,12 +289,13 @@ $cs = $statusStyles[$client['status']];
                                     <th class="px-3 py-3 font-medium">Specs</th>
                                     <th class="px-3 py-3 font-medium">Date</th>
                                     <th class="px-3 py-3 font-medium">Status</th>
-                                    <th class="pr-6 py-3 font-medium text-right">Value</th>
+                                    <th class="px-3 py-3 font-medium text-right">Value</th>
+                                    <th class="pr-6 py-3 font-medium text-center"></th>
                                 </tr>
                             </thead>
                             <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
                                 <?php foreach ($orders as $o): ?>
-                                <?php $os = $statusStyles[$o['status']]; ?>
+                                <?php $os = $statusStyles[$o['status']] ?? $statusStyles['draft']; ?>
                                 <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
                                     <td class="pl-6 pr-3 py-3.5 num font-medium" style="color: var(--ink);"><?= htmlspecialchars($o['order']) ?></td>
                                     <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($o['specs']) ?></td>
@@ -281,18 +305,22 @@ $cs = $statusStyles[$client['status']];
                                             <span class="status-dot" style="background:<?= $os['dot'] ?>;"></span><?= $os['label'] ?>
                                         </span>
                                     </td>
-                                    <td class="pr-6 py-3.5 text-right font-medium num" style="color: var(--ink);"><?= number_format($o['value']) ?></td>
+                                    <td class="px-3 py-3.5 text-right font-medium num" style="color: var(--ink);"><?= number_format($o['value']) ?></td>
+                                    <td class="pr-6 py-3.5 text-center">
+                                        <a href="view_order.php?order_num=<?= urlencode($o['order']) ?>" class="inline-flex items-center justify-center transition-colors" style="color: var(--mute);" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'" title="View Details">
+                                            <i data-lucide="eye" class="w-4 h-4"></i>
+                                        </a>
+                                    </td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
                     <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                        <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($orders) ?> of <?= $client['orders_count'] ?></span>
+                        <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($orders) ?> of <?= $client['orders_count'] ?></span>
                         <div class="flex items-center gap-1.5">
                             <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                             <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>
-                            <button class="w-7 h-7 flex items-center justify-center border rounded-sm text-[12px] font-medium mono" style="border-color: var(--line); color: var(--ink);">2</button>
                             <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
                         </div>
                     </div>
@@ -338,27 +366,15 @@ $cs = $statusStyles[$client['status']];
                             <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
                         </div>
                         <div class="p-5 timeline-rail flex-1 overflow-y-auto">
-                            <div class="flex gap-3 pb-5 relative">
-                                <div class="timeline-dot current mt-1"></div>
+                            <?php foreach ($activities as $index => $act): ?>
+                            <div class="flex gap-3 <?= $index === count($activities) - 1 ? '' : 'pb-5 relative' ?>">
+                                <div class="timeline-dot <?= $index === 0 ? 'current' : '' ?> mt-1"></div>
                                 <div>
-                                    <p class="text-[13px]" style="color: var(--ink);">Order <span class="font-semibold num">#7742</span> moved to <span class="font-semibold">Processing</span></p>
-                                    <p class="text-[11px] mono mt-1" style="color: var(--mute-soft);">Today · 14:22 — R. Fahad</p>
+                                    <p class="text-[13px]" style="color: var(--ink);"><?= htmlspecialchars($act['activity_text']) ?></p>
+                                    <p class="text-[11px] mono mt-1" style="color: var(--mute-soft);"><?= date('d M · H:i', strtotime($act['activity_time'])) ?> — <?= htmlspecialchars($act['author']) ?></p>
                                 </div>
                             </div>
-                            <div class="flex gap-3 pb-5 relative">
-                                <div class="timeline-dot mt-1"></div>
-                                <div>
-                                    <p class="text-[13px]" style="color: var(--ink);">Payment received for <span class="font-semibold num">#INV-2207</span></p>
-                                    <p class="text-[11px] mono mt-1" style="color: var(--mute-soft);">12 Jun · 09:40 — System</p>
-                                </div>
-                            </div>
-                            <div class="flex gap-3 relative">
-                                <div class="timeline-dot mt-1"></div>
-                                <div>
-                                    <p class="text-[13px]" style="color: var(--ink);">Order <span class="font-semibold num">#7690</span> delivered</p>
-                                    <p class="text-[11px] mono mt-1" style="color: var(--mute-soft);">02 Jun · 16:05 — Logistics</p>
-                                </div>
-                            </div>
+                            <?php endforeach; ?>
                         </div>
                         <div class="border-t p-3" style="border-color: var(--line-soft);">
                             <a href="client_activity.php?client_id=<?= $client['id'] ?>" class="block w-full text-center text-[12px] font-medium py-1.5 transition-colors" style="color: var(--mute); text-decoration: none;">View all activity</a>

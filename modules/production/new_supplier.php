@@ -1,4 +1,54 @@
 <?php
+require_once '../../config/db.php';
+
+$error_message = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $reference_id = $_POST['reference_id'] ?? '';
+    $company_name = $_POST['company_name'] ?? '';
+    $email = $_POST['email'] ?? '';
+    $phone = $_POST['phone'] ?? '';
+    $address = $_POST['address'] ?? '';
+    
+    $contact_name = $_POST['contact_name'] ?? '';
+    $parts = explode(' ', trim($contact_name), 2);
+    $contact_first_name = $parts[0] ?: 'Unknown';
+    $contact_last_name = $parts[1] ?? '';
+    
+    $job_title = $_POST['job_title'] ?? '';
+    $segment = $_POST['segment'] ?? 'Raw Materials';
+    $status = $_POST['status'] ?? 'pending';
+    $tax_id = $_POST['tax_id'] ?? '';
+    $cr_number = $_POST['cr_number'] ?? '';
+    $payment_terms = $_POST['payment_terms'] ?? 'Net 30 Days';
+
+    $country = 'Saudi Arabia';
+    $city = 'Default City';
+    $partner_type = 'supplier';
+    $password_hash = password_hash('123456', PASSWORD_DEFAULT);
+
+    try {
+        $stmt = $pdo->prepare("INSERT INTO partners (
+            reference_id, partner_type, company_name, cr_number, country, city, address, tax_id, 
+            contact_first_name, contact_last_name, job_title, email, phone, status, segment, payment_terms, password_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $stmt->execute([
+            $reference_id, $partner_type, $company_name, $cr_number, $country, $city, $address, $tax_id,
+            $contact_first_name, $contact_last_name, $job_title, $email, $phone, $status, $segment, $payment_terms, $password_hash
+        ]);
+
+        header("Location: suppliers_directory.php");
+        exit;
+    } catch (PDOException $e) {
+        if ($e->getCode() == 23000) {
+            $error_message = "This Email or CR Number is already registered in the system.";
+        } else {
+            $error_message = "Database Error: " . $e->getMessage();
+        }
+    }
+}
+
 $active_page = 'suppliers_directory';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Production', 'Suppliers Directory', 'New Supplier'];
@@ -101,13 +151,23 @@ $new_supplier_id = 'SUP-' . rand(5010, 5999);
                     <a href="suppliers_directory.php" class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
                         Cancel
                     </a>
-                    <button class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
+                    <button type="submit" form="newSupplierForm" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
                         <i data-lucide="save" class="w-4 h-4"></i>Save Supplier Profile
                     </button>
                 </div>
             </div>
 
-            <form action="suppliers_directory.php" method="POST">
+            <?php if (!empty($error_message)): ?>
+            <div class="mb-6 p-4 rounded-md" style="background-color: #F8E9E7; border: 1px solid #963B33;">
+                <p class="text-[13.5px] font-medium flex items-center gap-2" style="color: #963B33;">
+                    <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                    <?= htmlspecialchars($error_message) ?>
+                </p>
+            </div>
+            <?php endif; ?>
+
+            <form id="newSupplierForm" action="" method="POST">
+                <input type="hidden" name="reference_id" value="<?= htmlspecialchars($new_supplier_id) ?>">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     
                     <div class="lg:col-span-2 flex flex-col gap-6">
@@ -120,19 +180,19 @@ $new_supplier_id = 'SUP-' . rand(5010, 5999);
                             <div class="grid grid-cols-2 gap-5">
                                 <div class="col-span-2">
                                     <label class="form-label">Full Company Name / Legal Entity</label>
-                                    <input type="text" class="form-input" placeholder="Enter official company name" required>
+                                    <input type="text" name="company_name" class="form-input" placeholder="Enter official company name" value="<?= htmlspecialchars($_POST['company_name'] ?? '') ?>" required>
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">General Email Address</label>
-                                    <input type="email" class="form-input mono" placeholder="info@company.com">
+                                    <input type="email" name="email" class="form-input mono" placeholder="info@company.com" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required>
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Main Office Phone</label>
-                                    <input type="tel" class="form-input mono num" placeholder="+966 1X XXX XXXX">
+                                    <input type="tel" name="phone" class="form-input mono num" placeholder="+966 1X XXX XXXX" value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" required>
                                 </div>
                                 <div class="col-span-2">
                                     <label class="form-label">Registered Office Address</label>
-                                    <textarea class="form-input" rows="3" placeholder="Building, Street, District, City, Country..."></textarea>
+                                    <textarea name="address" class="form-input" rows="3" placeholder="Building, Street, District, City, Country..." required><?= htmlspecialchars($_POST['address'] ?? '') ?></textarea>
                                 </div>
                             </div>
                         </div>
@@ -145,19 +205,11 @@ $new_supplier_id = 'SUP-' . rand(5010, 5999);
                             <div class="grid grid-cols-2 gap-5">
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Contact Person Name</label>
-                                    <input type="text" class="form-input" placeholder="Full name">
+                                    <input type="text" name="contact_name" class="form-input" placeholder="Full name" value="<?= htmlspecialchars($_POST['contact_name'] ?? '') ?>" required>
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Job Title / Position</label>
-                                    <input type="text" class="form-input" placeholder="e.g. Sales Manager">
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Direct Email Address</label>
-                                    <input type="email" class="form-input mono" placeholder="contact@company.com">
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Mobile Number</label>
-                                    <input type="tel" class="form-input mono num" placeholder="+966 5X XXX XXXX">
+                                    <input type="text" name="job_title" class="form-input" placeholder="e.g. Sales Manager" value="<?= htmlspecialchars($_POST['job_title'] ?? '') ?>" required>
                                 </div>
                             </div>
                         </div>
@@ -174,25 +226,25 @@ $new_supplier_id = 'SUP-' . rand(5010, 5999);
                             <div class="flex flex-col gap-5">
                                 <div>
                                     <label class="form-label">Generated Supplier ID</label>
-                                    <input type="text" class="form-input readonly mono num" value="<?= $new_supplier_id ?>" disabled>
+                                    <input type="text" class="form-input readonly mono num" value="<?= htmlspecialchars($new_supplier_id) ?>" disabled>
                                 </div>
                                 <div>
                                     <label class="form-label">Supply Category</label>
-                                    <select class="form-select">
-                                        <option value="" selected disabled>Select primary category...</option>
-                                        <option value="Raw Materials">Raw Materials</option>
-                                        <option value="Cylinders">Cylinders & Containment</option>
-                                        <option value="Chemicals">Chemicals & Additives</option>
-                                        <option value="Transportation">Transportation & Logistics</option>
-                                        <option value="Spare Parts">Fleet Spare Parts</option>
-                                        <option value="Office">Office Supplies & Services</option>
+                                    <select name="segment" class="form-select" required>
+                                        <option value="" <?= empty($_POST['segment']) ? 'selected' : '' ?> disabled>Select primary category...</option>
+                                        <option value="Raw Materials" <?= ($_POST['segment'] ?? '') == 'Raw Materials' ? 'selected' : '' ?>>Raw Materials</option>
+                                        <option value="Cylinders" <?= ($_POST['segment'] ?? '') == 'Cylinders' ? 'selected' : '' ?>>Cylinders & Containment</option>
+                                        <option value="Chemicals" <?= ($_POST['segment'] ?? '') == 'Chemicals' ? 'selected' : '' ?>>Chemicals & Additives</option>
+                                        <option value="Transportation" <?= ($_POST['segment'] ?? '') == 'Transportation' ? 'selected' : '' ?>>Transportation & Logistics</option>
+                                        <option value="Spare Parts" <?= ($_POST['segment'] ?? '') == 'Spare Parts' ? 'selected' : '' ?>>Fleet Spare Parts</option>
+                                        <option value="Office" <?= ($_POST['segment'] ?? '') == 'Office' ? 'selected' : '' ?>>Office Supplies & Services</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label class="form-label">Initial Status</label>
-                                    <select class="form-select">
-                                        <option value="active">Active (Approved)</option>
-                                        <option value="pending" selected>Pending Verification</option>
+                                    <select name="status" class="form-select" required>
+                                        <option value="active" <?= ($_POST['status'] ?? '') == 'active' ? 'selected' : '' ?>>Active (Approved)</option>
+                                        <option value="pending" <?= ($_POST['status'] ?? 'pending') == 'pending' ? 'selected' : '' ?>>Pending Verification</option>
                                     </select>
                                 </div>
                             </div>
@@ -206,20 +258,20 @@ $new_supplier_id = 'SUP-' . rand(5010, 5999);
                             <div class="flex flex-col gap-5">
                                 <div>
                                     <label class="form-label">Tax ID (VAT Number)</label>
-                                    <input type="text" class="form-input mono num" placeholder="15-digit Tax Identification">
+                                    <input type="text" name="tax_id" class="form-input mono num" placeholder="15-digit Tax Identification" value="<?= htmlspecialchars($_POST['tax_id'] ?? '') ?>" required>
                                 </div>
                                 <div>
                                     <label class="form-label">Commercial Registry (CR)</label>
-                                    <input type="text" class="form-input mono num" placeholder="CR Document Number">
+                                    <input type="text" name="cr_number" class="form-input mono num" placeholder="CR Document Number" value="<?= htmlspecialchars($_POST['cr_number'] ?? '') ?>" required>
                                 </div>
                                 <div>
                                     <label class="form-label">Agreed Payment Terms</label>
-                                    <select class="form-select">
-                                        <option value="Net 15 Days">Net 15 Days</option>
-                                        <option value="Net 30 Days" selected>Net 30 Days</option>
-                                        <option value="Net 60 Days">Net 60 Days</option>
-                                        <option value="Cash in Advance">Cash in Advance (CIA)</option>
-                                        <option value="Cash on Delivery">Cash on Delivery (COD)</option>
+                                    <select name="payment_terms" class="form-select" required>
+                                        <option value="Net 15 Days" <?= ($_POST['payment_terms'] ?? '') == 'Net 15 Days' ? 'selected' : '' ?>>Net 15 Days</option>
+                                        <option value="Net 30 Days" <?= ($_POST['payment_terms'] ?? 'Net 30 Days') == 'Net 30 Days' ? 'selected' : '' ?>>Net 30 Days</option>
+                                        <option value="Net 60 Days" <?= ($_POST['payment_terms'] ?? '') == 'Net 60 Days' ? 'selected' : '' ?>>Net 60 Days</option>
+                                        <option value="Cash in Advance" <?= ($_POST['payment_terms'] ?? '') == 'Cash in Advance' ? 'selected' : '' ?>>Cash in Advance (CIA)</option>
+                                        <option value="Cash on Delivery" <?= ($_POST['payment_terms'] ?? '') == 'Cash on Delivery' ? 'selected' : '' ?>>Cash on Delivery (COD)</option>
                                     </select>
                                 </div>
                             </div>

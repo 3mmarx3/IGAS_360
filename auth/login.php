@@ -1,5 +1,45 @@
 <?php
+session_start();
+require_once '../config/db.php';
+
 $system_version = 'v2.4.1';
+$error_message = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+
+    if (!empty($email) && !empty($password)) {
+        try {
+            $stmt = $pdo->prepare("SELECT id, reference_id, partner_type, company_name, contact_first_name, contact_last_name, password_hash, status FROM partners WHERE email = ? LIMIT 1");
+            $stmt->execute([$email]);
+            $user = $stmt->fetch();
+
+            if ($user && password_verify($password, $user['password_hash'])) {
+                if ($user['status'] === 'pending') {
+                    $error_message = "Account Pending: Your registration is still under review by administration.";
+                } elseif ($user['status'] === 'suspended' || $user['status'] === 'rejected') {
+                    $error_message = "Access Denied: Your account has been suspended or rejected.";
+                } else {
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['reference_id'] = $user['reference_id'];
+                    $_SESSION['partner_type'] = $user['partner_type'];
+                    $_SESSION['user_name'] = $user['contact_first_name'] . ' ' . $user['contact_last_name'];
+                    $_SESSION['company_name'] = $user['company_name'];
+                    
+                    header("Location: ../main/command_center.php");
+                    exit;
+                }
+            } else {
+                $error_message = "Authentication Failed: Invalid corporate email or password.";
+            }
+        } catch (PDOException $e) {
+            $error_message = "System Error: Unable to authenticate at this moment.";
+        }
+    } else {
+        $error_message = "Validation Error: Please provide both email and password.";
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -9,7 +49,7 @@ $system_version = 'v2.4.1';
     <title>Login | I-GAS Enterprise</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2 family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
@@ -91,12 +131,19 @@ $system_version = 'v2.4.1';
                 <p class="text-[13.5px] mt-2" style="color: var(--mute);">Provide your authorized enterprise credentials to initialize session terminal.</p>
             </div>
 
-            <form action="../main/command_center.php" method="POST" class="flex flex-col gap-5">
+            <?php if (!empty($error_message)): ?>
+            <div class="mb-6 p-4 border rounded-sm flex items-start gap-3" style="background: #F8E9E7; border-color: #E2BDBA; color: #963B33;">
+                <i data-lucide="alert-circle" class="w-5 h-5 flex-shrink-0 mt-0.5"></i>
+                <span class="text-[13px] font-medium"><?= htmlspecialchars($error_message) ?></span>
+            </div>
+            <?php endif; ?>
+
+            <form action="" method="POST" class="flex flex-col gap-5">
                 <div>
                     <label class="form-label">Corporate Email</label>
                     <div class="input-group">
                         <i data-lucide="mail" class="w-4 h-4 input-icon"></i>
-                        <input type="email" class="form-input has-icon mono" placeholder="username@i-gas.com.sa" required autocomplete="username">
+                        <input type="email" name="email" class="form-input has-icon mono" placeholder="username@i-gas.com.sa" required autocomplete="username">
                     </div>
                 </div>
 
@@ -107,13 +154,13 @@ $system_version = 'v2.4.1';
                     </div>
                     <div class="input-group">
                         <i data-lucide="lock" class="w-4 h-4 input-icon"></i>
-                        <input type="password" class="form-input has-icon mono" placeholder="••••••••••••" required autocomplete="current-password">
+                        <input type="password" name="password" class="form-input has-icon mono" placeholder="••••••••••••" required autocomplete="current-password">
                     </div>
                 </div>
 
                 <div class="flex items-center justify-between mt-1">
                     <label class="check-item">
-                        <input type="checkbox" id="remember_me">
+                        <input type="checkbox" id="remember_me" name="remember_me">
                         <div class="check-box"><i data-lucide="check" class="w-3 h-3"></i></div>
                         <span class="text-[13px]" style="color: var(--ink-soft);">Trust this workstation</span>
                     </label>

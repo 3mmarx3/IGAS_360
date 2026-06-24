@@ -1,22 +1,42 @@
-
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'suppliers_directory';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Production', 'Suppliers Directory'];
 
-$suppliers = [
-    ['id' => 'SUP-5001', 'name' => 'Gulf Industrial Gases', 'category' => 'Raw Materials', 'contact' => 'Ahmad Al-Sayed', 'phone' => '+966 50 123 4567', 'status' => 'active', 'rating' => 4.9],
-    ['id' => 'SUP-5002', 'name' => 'Modern Steel Fabricators', 'category' => 'Cylinders', 'contact' => 'Omar Tariq', 'phone' => '+966 55 987 6543', 'status' => 'active', 'rating' => 4.5],
-    ['id' => 'SUP-5003', 'name' => 'Global Logistics Hub', 'category' => 'Transportation', 'contact' => 'Sara Mansour', 'phone' => '+966 54 321 0987', 'status' => 'pending', 'rating' => 4.2],
-    ['id' => 'SUP-5004', 'name' => 'Chemical Solutions Co.', 'category' => 'Chemicals', 'contact' => 'Khalid Faisal', 'phone' => '+966 56 789 0123', 'status' => 'active', 'rating' => 4.8],
-    ['id' => 'SUP-5005', 'name' => 'Advanced Valve Systems', 'category' => 'Spare Parts', 'contact' => 'Fahad Al-Jaber', 'phone' => '+966 53 246 8102', 'status' => 'restricted', 'rating' => 3.2],
-    ['id' => 'SUP-5006', 'name' => 'National Energy Resources', 'category' => 'Raw Materials', 'contact' => 'Youssef Ali', 'phone' => '+966 59 111 2222', 'status' => 'active', 'rating' => 4.7],
-];
+$stmt_stats = $pdo->prepare("
+    SELECT 
+        COUNT(*) as total_count,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_count,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+        AVG(rating) as avg_rating
+    FROM partners 
+    WHERE partner_type = 'supplier'
+");
+$stmt_stats->execute();
+$stats = $stmt_stats->fetch();
 
-$total_suppliers = 45;
-$active_count    = 38;
-$pending_count   = 5;
-$avg_rating      = 4.6;
+$total_suppliers = $stats['total_count'] ?? 0;
+$active_count    = $stats['active_count'] ?? 0;
+$pending_count   = $stats['pending_count'] ?? 0;
+$avg_rating      = number_format($stats['avg_rating'] ?? 0, 1);
+
+$stmt_suppliers = $pdo->prepare("
+    SELECT 
+        reference_id as id, 
+        company_name as name, 
+        segment as category, 
+        CONCAT(contact_first_name, ' ', contact_last_name) as contact, 
+        phone, 
+        status, 
+        rating 
+    FROM partners 
+    WHERE partner_type = 'supplier' 
+    ORDER BY created_at DESC
+");
+$stmt_suppliers->execute();
+$suppliers = $stmt_suppliers->fetchAll();
 
 $statusStyles = [
     'active'     => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Active'],
@@ -231,7 +251,6 @@ $statusStyles = [
                         <span class="tab-item active">All <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $total_suppliers ?></span></span>
                         <span class="tab-item">Active <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $active_count ?></span></span>
                         <span class="tab-item">Pending <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $pending_count ?></span></span>
-                        <span class="tab-item text-red-700">Restricted <span class="num text-[11px]" style="color: #963B33;">2</span></span>
                     </div>
                 </div>
 
@@ -252,7 +271,7 @@ $statusStyles = [
                         <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
                             <?php foreach ($suppliers as $s): ?>
                             <?php
-                                $statusObj = $statusStyles[$s['status']];
+                                $statusObj = $statusStyles[$s['status']] ?? $statusStyles['pending'];
                                 $isRestricted = $s['status'] === 'restricted';
                                 $rowColor = $isRestricted ? 'var(--mute-soft)' : 'var(--ink)';
                             ?>
@@ -290,8 +309,6 @@ $statusStyles = [
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm text-[12px] font-medium mono" style="border-color: var(--line); color: var(--ink);">2</button>
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm text-[12px] font-medium mono" style="border-color: var(--line); color: var(--ink);">3</button>
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
                     </div>
                 </div>

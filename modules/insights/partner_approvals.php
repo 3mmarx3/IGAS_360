@@ -1,24 +1,61 @@
 <?php
-$active_page = 'system_settings';
+session_start();
+require_once '../../config/db.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['partner_id'])) {
+    $action = $_POST['action'];
+    $partner_id = (int)$_POST['partner_id'];
+    $new_status = ($action === 'approve') ? 'approved' : 'rejected';
+    
+    $stmt = $pdo->prepare("UPDATE partners SET status = ? WHERE id = ?");
+    $stmt->execute([$new_status, $partner_id]);
+    
+    header("Location: partner_approvals.php");
+    exit;
+}
+
+$stmt = $pdo->prepare("SELECT * FROM partners ORDER BY created_at DESC");
+$stmt->execute();
+$all_records = $stmt->fetchAll();
+
+$requests = [];
+$pending_clients = 0;
+$pending_suppliers = 0;
+$total_pending = 0;
+
+foreach ($all_records as $row) {
+    if ($row['status'] === 'pending') {
+        $total_pending++;
+        if ($row['partner_type'] === 'client') {
+            $pending_clients++;
+        } elseif ($row['partner_type'] === 'supplier') {
+            $pending_suppliers++;
+        }
+    }
+
+    $requests[] = [
+        'db_id'   => $row['id'],
+        'id'      => $row['reference_id'],
+        'name'    => $row['company_name'],
+        'type'    => $row['partner_type'],
+        'cr'      => $row['cr_number'],
+        'status'  => $row['status'],
+        'date'    => date('Y-m-d', strtotime($row['created_at'])),
+        'contact' => $row['contact_first_name'] . ' ' . $row['contact_last_name'],
+        'email'   => $row['email']
+    ];
+}
+
+$avg_review_time = '4.2h';
+
+$active_page = 'partner_approvals';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Global Administration', 'Partner Approvals'];
 
-$requests = [
-    ['id' => 'REQ-8801', 'name' => 'Al-Fozan Industrial Metals', 'type' => 'supplier', 'cr' => '1010348211', 'date' => '2026-06-24', 'contact' => 'Khaled Al-Fozan', 'email' => 'k.fozan@fozan.com'],
-    ['id' => 'REQ-8802', 'name' => 'Saudi Ready Mix Co.', 'type' => 'client', 'cr' => '2050112493', 'date' => '2026-06-23', 'contact' => 'Eng. Fahad Mustafa', 'email' => 'f.mustafa@srm.com.sa'],
-    ['id' => 'REQ-8803', 'name' => 'National Gas Distribution', 'type' => 'client', 'cr' => '4030291482', 'date' => '2026-06-22', 'contact' => 'Abdulrahman Al-Amri', 'email' => 'a.amri@natgas.com'],
-    ['id' => 'REQ-8804', 'name' => 'Advanced Valves & Fittings', 'type' => 'supplier', 'cr' => '1010992415', 'date' => '2026-06-21', 'contact' => 'Youssef Idris', 'email' => 'y.idris@advvalves.com'],
-    ['id' => 'REQ-8805', 'name' => 'Yanbu Petrochemical Logistics', 'type' => 'client', 'cr' => '3051024981', 'date' => '2026-06-20', 'contact' => 'Bandar Al-Jahni', 'email' => 'b.jahni@ypl.com.sa']
-];
-
-$total_pending = 14;
-$pending_clients = 6;
-$pending_suppliers = 8;
-$avg_review_time = '4.2h';
-
 $typeStyles = [
-    'client'   => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'label' => 'Corporate Client'],
-    'supplier' => ['bg' => '#F2F1EF', 'fg' => '#5C5A56', 'label' => 'Industrial Supplier']
+    'client'    => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'label' => 'Corporate Client'],
+    'supplier'  => ['bg' => '#F2F1EF', 'fg' => '#5C5A56', 'label' => 'Industrial Supplier'],
+    'logistics' => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'label' => 'Logistics Partner']
 ];
 ?>
 <!DOCTYPE html>
@@ -107,7 +144,7 @@ $typeStyles = [
                 <span class="status-dot" style="background: #9A7B2E;"></span>Gatekeeper Protocol Active
             </span>
             <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Pending Verification Matrix</span>
+            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Verification & Administration Matrix</span>
         </div>
 
         <div class="flex-1 overflow-auto px-8 py-7">
@@ -116,7 +153,7 @@ $typeStyles = [
                 <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2" style="color: var(--mute);">Global Administration</p>
                     <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Partner Approvals</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Review commercial credentials, tax registrations, and legal status to grant network access nodes.</p>
+                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Review commercial credentials, tax registrations, and manage network access nodes.</p>
                 </div>
                 <div class="flex gap-3">
                     <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
@@ -162,7 +199,7 @@ $typeStyles = [
             <div class="card rounded-md flex flex-col overflow-hidden">
                 <div class="px-6 pt-5 border-b" style="border-color: var(--line-soft);">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-[15px] font-semibold tracking-tight" style="color: var(--ink);">Onboarding Queue</h3>
+                        <h3 class="text-[15px] font-semibold tracking-tight" style="color: var(--ink);">Partner Directory & Queue</h3>
                         <div class="flex items-center gap-3">
                             <div class="relative">
                                 <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2" style="color: var(--mute-soft);"></i>
@@ -176,9 +213,8 @@ $typeStyles = [
                         </div>
                     </div>
                     <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">All Requests <span class="num text-[11px]" style="color: var(--mute-soft);"><?= count($requests) ?></span></span>
-                        <span class="tab-item">Clients Queue <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $pending_clients ?></span></span>
-                        <span class="tab-item">Suppliers Queue <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $pending_suppliers ?></span></span>
+                        <span class="tab-item active">All Entities <span class="num text-[11px]" style="color: var(--mute-soft);"><?= count($requests) ?></span></span>
+                        <span class="tab-item">Pending Approvals <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $total_pending ?></span></span>
                     </div>
                 </div>
 
@@ -192,51 +228,71 @@ $typeStyles = [
                                 <th class="px-3 py-3 font-medium">Primary Contact Point</th>
                                 <th class="px-3 py-3 font-medium">Submission Date</th>
                                 <th class="px-3 py-3 font-medium">Classification</th>
-                                <th class="pr-6 py-3 font-medium text-right">Verification Protocols</th>
+                                <th class="pr-6 py-3 font-medium text-right">Status / Protocols</th>
                             </tr>
                         </thead>
                         <tbody class="text-[13px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($requests as $r): ?>
-                            <?php $style = $typeStyles[$r['type']]; ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex flex-col gap-0.5">
-                                        <span class="font-medium" style="color: var(--ink);"><?= htmlspecialchars($r['name']) ?></span>
-                                        <span class="text-[11px] mono" style="color: var(--mute-soft);"><?= htmlspecialchars($r['id']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 mono num" style="color: var(--ink);"><?= htmlspecialchars($r['cr']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex flex-col gap-0.5">
-                                        <span class="font-medium" style="color: var(--ink);"><?= htmlspecialchars($r['contact']) ?></span>
-                                        <span class="text-[12px]" style="color: var(--mute);"><?= htmlspecialchars($r['email']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($r['date']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $style['bg'] ?>; color: <?= $style['fg'] ?>;">
-                                        <?= $style['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right">
-                                    <div class="flex items-center justify-end gap-2">
-                                        <button class="btn-reject px-3 py-1.5 rounded-sm text-[12px] font-medium">Reject</button>
-                                        <button class="btn-approve px-3 py-1.5 rounded-sm text-[12px] font-medium">Approve</button>
-                                    </div>
-                                </td>
+                            <?php if (empty($requests)): ?>
+                            <tr>
+                                <td colspan="7" class="text-center py-8 text-[13px]" style="color: var(--mute);">No applications or entities found in the system.</td>
                             </tr>
-                            <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($requests as $r): ?>
+                                <?php $style = $typeStyles[$r['type']] ?? $typeStyles['client']; ?>
+                                <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                    <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
+                                    <td class="px-3 py-3.5">
+                                        <div class="flex flex-col gap-0.5">
+                                            <a href="partner_profile.php?type=<?= urlencode($r['type']) ?>" class="font-semibold transition-colors hover:underline" style="color: var(--ink);"><?= htmlspecialchars($r['name']) ?></a>
+                                            <span class="text-[11px] mono" style="color: var(--mute-soft);"><?= htmlspecialchars($r['id']) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 mono num" style="color: var(--ink);"><?= htmlspecialchars($r['cr']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <div class="flex flex-col gap-0.5">
+                                            <span class="font-medium" style="color: var(--ink);"><?= htmlspecialchars($r['contact']) ?></span>
+                                            <span class="text-[12px]" style="color: var(--mute);"><?= htmlspecialchars($r['email']) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($r['date']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <span class="pill" style="background: <?= $style['bg'] ?>; color: <?= $style['fg'] ?>;">
+                                            <?= $style['label'] ?>
+                                        </span>
+                                    </td>
+                                    <td class="pr-6 py-3.5 text-right">
+                                        <?php if ($r['status'] === 'pending'): ?>
+                                            <form method="POST" action="" class="flex items-center justify-end gap-2 m-0 p-0">
+                                                <input type="hidden" name="partner_id" value="<?= $r['db_id'] ?>">
+                                                <button type="submit" name="action" value="reject" class="btn-reject px-3 py-1.5 rounded-sm text-[12px] font-medium">Reject</button>
+                                                <button type="submit" name="action" value="approve" class="btn-approve px-3 py-1.5 rounded-sm text-[12px] font-medium">Approve</button>
+                                            </form>
+                                        <?php elseif ($r['status'] === 'approved'): ?>
+                                            <span class="pill" style="background: #EAF1E7; color: #45663F; border: 1px solid #D4E3D0;">
+                                                <i data-lucide="check-circle" class="w-3 h-3 mr-1"></i>Approved
+                                            </span>
+                                        <?php elseif ($r['status'] === 'rejected'): ?>
+                                            <span class="pill" style="background: #F8E9E7; color: #963B33; border: 1px solid #F0D0CD;">
+                                                <i data-lucide="x-circle" class="w-3 h-3 mr-1"></i>Rejected
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="pill" style="background: var(--paper-deep); color: var(--mute); border: 1px solid var(--line-soft);">
+                                                <?= ucfirst(htmlspecialchars($r['status'])) ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft); background: var(--paper-dim);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($requests) ?> of <?= $total_pending ?> Applications</span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($requests) > 0 ? '1' : '0' ?>–<?= count($requests) ?> of <?= count($requests) ?> Entities</span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors bg-white hover:bg-gray-50" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm text-[12px] font-medium mono bg-white hover:bg-gray-50" style="border-color: var(--line); color: var(--ink);">2</button>
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors bg-white hover:bg-gray-50" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
                     </div>
                 </div>

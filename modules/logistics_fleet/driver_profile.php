@@ -1,27 +1,57 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'drivers_directory';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Drivers Directory', 'Driver Profile'];
 
-$driver_id = $_GET['id'] ?? 'DRV-101';
+$driver_id_param = $_GET['id'] ?? 1;
+
+$stmt = $pdo->prepare("SELECT d.*, v.make_model as vehicle_name FROM drivers d LEFT JOIN vehicles v ON d.assigned_vehicle = v.fleet_id WHERE d.id = ?");
+$stmt->execute([$driver_id_param]);
+$db_driver = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$db_driver) {
+    $db_driver = $pdo->query("SELECT d.*, v.make_model as vehicle_name FROM drivers d LEFT JOIN vehicles v ON d.assigned_vehicle = v.fleet_id LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+}
+
+$license_map = [
+    'heavy_hazmat' => 'Heavy / Hazmat',
+    'heavy'        => 'Heavy Transport',
+    'light'        => 'Light Commercial',
+    'private'      => 'Private'
+];
+
+$words = explode(' ', trim($db_driver['full_name']));
+$initials = '';
+foreach ($words as $w) {
+    if (!empty($w)) {
+        $initials .= strtoupper($w[0]);
+    }
+    if (strlen($initials) >= 2) break;
+}
+if (empty($initials)) {
+    $initials = 'U';
+}
 
 $driver = [
-    'id' => $driver_id,
-    'name' => 'Ahmed Ali',
-    'initials' => 'AA',
-    'license' => 'Heavy / Hazmat',
-    'license_no' => 'SA-98273645',
-    'expiry' => '2027-05-12',
+    'internal_id' => $db_driver['id'],
+    'id' => $db_driver['driver_id'],
+    'name' => $db_driver['full_name'],
+    'initials' => $initials,
+    'license' => $license_map[$db_driver['license_class']] ?? ucfirst($db_driver['license_class']),
+    'license_no' => $db_driver['license_number'],
+    'expiry' => $db_driver['license_expiry'],
     'blood_type' => 'O+',
-    'phone' => '+966 50 111 2233',
+    'phone' => $db_driver['mobile_number'],
     'emergency_contact' => '+966 55 999 8877 (Brother)',
-    'status' => 'active',
+    'status' => strtolower($db_driver['status']),
     'rating' => 4.8,
     'total_trips' => 342,
     'on_time_rate' => 96.5,
-    'joined' => '2022-03-15',
-    'vehicle_id' => 'FLT-001',
-    'vehicle_name' => 'Mercedes Actros'
+    'joined' => date('Y-m-d', strtotime($db_driver['created_at'])),
+    'vehicle_id' => ($db_driver['assigned_vehicle'] !== 'unassigned' && !empty($db_driver['assigned_vehicle'])) ? $db_driver['assigned_vehicle'] : 'Unassigned',
+    'vehicle_name' => $db_driver['vehicle_name'] ?? 'No Vehicle Assigned'
 ];
 
 $trips = [
@@ -45,7 +75,7 @@ $tripStyles = [
     'cancelled'  => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'label' => 'Cancelled'],
 ];
 
-$ds = $statusStyles[$driver['status']];
+$ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -157,7 +187,7 @@ $ds = $statusStyles[$driver['status']];
                     <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
                         <i data-lucide="file-check" class="w-4 h-4"></i>View License
                     </button>
-                    <a href="edit_driver.php?id=<?= $driver['id'] ?>" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
+                    <a href="edit_driver.php?id=<?= htmlspecialchars($driver['internal_id']) ?>" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
                         <i data-lucide="pencil" class="w-4 h-4"></i>Edit Profile
                     </a>
                 </div>
@@ -167,7 +197,7 @@ $ds = $statusStyles[$driver['status']];
                 <div class="card rounded-md p-5">
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Safety &amp; Rating</p>
                     <div class="flex items-center gap-2">
-                        <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= $driver['rating'] ?></h3>
+                        <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= htmlspecialchars($driver['rating']) ?></h3>
                         <i data-lucide="star" class="w-5 h-5 fill-current text-yellow-500"></i>
                     </div>
                     <div class="mt-3 flex items-center text-[12px]">
@@ -187,9 +217,9 @@ $ds = $statusStyles[$driver['status']];
                 
                 <div class="card rounded-md p-5">
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">On-Time Delivery</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= $driver['on_time_rate'] ?>%</h3>
+                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= htmlspecialchars($driver['on_time_rate']) ?>%</h3>
                     <div class="mt-4 meter-bar h-1.5 w-full overflow-hidden">
-                        <div class="meter-fill h-full" style="width: <?= $driver['on_time_rate'] ?>%"></div>
+                        <div class="meter-fill h-full" style="width: <?= htmlspecialchars($driver['on_time_rate']) ?>%"></div>
                     </div>
                 </div>
                 
@@ -197,7 +227,11 @@ $ds = $statusStyles[$driver['status']];
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">License Expiry</p>
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= htmlspecialchars(date('d M Y', strtotime($driver['expiry']))) ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);">Valid</span>
+                        <?php if (strtotime($driver['expiry']) > time()): ?>
+                            <span style="color: var(--mute);">Valid</span>
+                        <?php else: ?>
+                            <span style="color: #963B33;">Expired</span>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -287,7 +321,9 @@ $ds = $statusStyles[$driver['status']];
                                     <p class="text-[12px] mono mt-0.5" style="color: var(--mute);"><?= htmlspecialchars($driver['vehicle_id']) ?></p>
                                 </div>
                             </div>
-                            <a href="vehicle_logs.php?id=<?= $driver['vehicle_id'] ?>" class="w-full btn-secondary py-2 rounded-sm text-[12.5px] font-medium">View Vehicle Logs</a>
+                            <?php if ($driver['vehicle_id'] !== 'Unassigned'): ?>
+                            <a href="vehicle_logs.php?id=<?= htmlspecialchars($driver['vehicle_id']) ?>" class="w-full btn-secondary py-2 rounded-sm text-[12.5px] font-medium">View Vehicle Logs</a>
+                            <?php endif; ?>
                         </div>
                     </div>
 
