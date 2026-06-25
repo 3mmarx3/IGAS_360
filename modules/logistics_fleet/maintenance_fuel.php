@@ -1,27 +1,64 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'maintenance_fuel';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Maintenance & Fuel'];
 
-$maintenance_records = [
-    ['id' => 'MNT-4021', 'vehicle' => 'FLT-001', 'model' => 'Mercedes Actros', 'type' => 'Preventive', 'status' => 'in_progress', 'date' => '2026-06-22', 'cost' => '1,250'],
-    ['id' => 'MNT-4022', 'vehicle' => 'FLT-004', 'model' => 'Volvo FH16', 'type' => 'Repair', 'status' => 'overdue', 'date' => '2026-06-20', 'cost' => '3,400'],
-    ['id' => 'MNT-4023', 'vehicle' => 'FLT-007', 'model' => 'Scania R500', 'type' => 'Inspection', 'status' => 'scheduled', 'date' => '2026-06-25', 'cost' => '450'],
-    ['id' => 'MNT-4024', 'vehicle' => 'FLT-002', 'model' => 'Mercedes Actros', 'type' => 'Tire Replacement', 'status' => 'scheduled', 'date' => '2026-06-26', 'cost' => '2,100'],
-    ['id' => 'MNT-4019', 'vehicle' => 'FLT-005', 'model' => 'Isuzu NPR', 'type' => 'Oil Change', 'status' => 'completed', 'date' => '2026-06-18', 'cost' => '320'],
-    ['id' => 'MNT-4018', 'vehicle' => 'FLT-009', 'model' => 'Ford F-550', 'type' => 'Brake Pad Servicing', 'status' => 'completed', 'date' => '2026-06-15', 'cost' => '850']
-];
+$stmt_active = $pdo->query("SELECT COUNT(*) FROM maintenance_tickets WHERE status IN ('scheduled', 'in_progress')");
+$active_tickets = $stmt_active->fetchColumn() ?: 0;
 
-$active_tickets = 14;
-$overdue_tasks  = 2;
-$fuel_mtd       = 24500;
-$cost_mtd       = 18450;
+$stmt_overdue = $pdo->query("SELECT COUNT(*) FROM maintenance_tickets WHERE status NOT IN ('completed', 'cancelled') AND scheduled_date < CURDATE()");
+$overdue_tasks = $stmt_overdue->fetchColumn() ?: 0;
+
+$stmt_fuel = $pdo->query("SELECT SUM(fuel_liters) FROM vehicle_logs WHERE event_type = 'refuel' AND MONTH(event_date) = MONTH(CURDATE()) AND YEAR(event_date) = YEAR(CURDATE())");
+$fuel_mtd = $stmt_fuel->fetchColumn() ?: 0;
+
+$stmt_cost = $pdo->query("SELECT SUM(estimated_cost) FROM maintenance_tickets WHERE MONTH(scheduled_date) = MONTH(CURDATE()) AND YEAR(scheduled_date) = YEAR(CURDATE())");
+$cost_mtd = $stmt_cost->fetchColumn() ?: 0;
+
+$stmt_records = $pdo->query("
+    SELECT m.ticket_id as id, m.vehicle_id as vehicle, v.make_model as model, m.service_type as type, m.status as db_status, m.scheduled_date as date, m.estimated_cost as cost 
+    FROM maintenance_tickets m 
+    LEFT JOIN vehicles v ON m.vehicle_id = v.fleet_id 
+    ORDER BY m.created_at DESC
+");
+$raw_records = $stmt_records->fetchAll(PDO::FETCH_ASSOC);
+
+$maintenance_records = [];
+foreach ($raw_records as $r) {
+    $status = $r['db_status'];
+    if (in_array($status, ['scheduled', 'in_progress']) && strtotime($r['date']) < strtotime(date('Y-m-d'))) {
+        $status = 'overdue';
+    }
+    if ($status === 'cancelled') {
+        $status = 'overdue';
+    }
+    
+    $type_map = [
+        'preventive' => 'Preventive (PM)',
+        'repair' => 'Repair',
+        'inspection' => 'Inspection',
+        'tires' => 'Tire Replacement',
+        'oil' => 'Oil Change'
+    ];
+    
+    $maintenance_records[] = [
+        'id' => $r['id'],
+        'vehicle' => $r['vehicle'],
+        'model' => $r['model'] ?: 'Unknown Model',
+        'type' => $type_map[$r['type']] ?? ucfirst($r['type']),
+        'status' => $status,
+        'date' => $r['date'],
+        'cost' => number_format($r['cost'], 2)
+    ];
+}
 
 $statusStyles = [
     'scheduled'   => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'Scheduled'],
     'in_progress' => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'In Workshop'],
     'completed'   => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Completed'],
-    'overdue'     => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Overdue'],
+    'overdue'     => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Overdue/Cancelled'],
 ];
 ?>
 <!DOCTYPE html>
@@ -140,7 +177,7 @@ $statusStyles = [
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= $active_tickets ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
                         <span class="pill" style="background: #FBF3DF; color: #7A5E1E;">
-                            <i data-lucide="tool" class="w-3 h-3"></i>3 in progress
+                            <i data-lucide="tool" class="w-3 h-3"></i>In progress / Scheduled
                         </span>
                     </div>
                 </div>
@@ -167,7 +204,7 @@ $statusStyles = [
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Maintenance Cost (MTD)</p>
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);">SAR <?= number_format($cost_mtd) ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);">Budget variance: +4.2%</span>
+                        <span style="color: var(--mute);">Budget tracking indicator</span>
                     </div>
                 </div>
             </div>
@@ -185,7 +222,7 @@ $statusStyles = [
                         </div>
                     </div>
                     <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">Active Maintenance <span class="num text-[11px]" style="color: var(--mute-soft);">14</span></span>
+                        <span class="tab-item active">Active Maintenance <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $active_tickets ?></span></span>
                         <span class="tab-item">Service History</span>
                         <span class="tab-item">Fuel Logs</span>
                     </div>
@@ -206,41 +243,50 @@ $statusStyles = [
                             </tr>
                         </thead>
                         <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($maintenance_records as $r): ?>
-                            <?php
-                                $s = $statusStyles[$r['status']];
-                                $isCompleted = $r['status'] === 'completed';
-                                $isOverdue = $r['status'] === 'overdue';
-                                $rowColor = $isCompleted ? 'var(--mute-soft)' : 'var(--ink)';
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['id']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex flex-col">
-                                        <span class="text-[12px] font-medium mono" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['vehicle']) ?></span>
-                                        <span class="text-[11px]" style="color: var(--mute);"><?= htmlspecialchars($r['model']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['type']) ?></td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono font-medium" style="color: <?= $isOverdue ? '#963B33' : ($isCompleted ? 'var(--mute-soft)' : 'var(--ink)') ?>;"><?= htmlspecialchars(date('d M Y', strtotime($r['date']))) ?></td>
-                                <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['cost']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
-<a href="maintenance_details.php?id=<?= $r['id'] ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">View Ticket</a>                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                            <?php if (empty($maintenance_records)): ?>
+                            <tr>
+                                <td colspan="8" class="px-6 py-8 text-center text-[13px]" style="color: var(--mute);">
+                                    No maintenance records found.
                                 </td>
                             </tr>
-                            <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($maintenance_records as $r): ?>
+                                <?php
+                                    $s = $statusStyles[$r['status']] ?? $statusStyles['scheduled'];
+                                    $isCompleted = $r['status'] === 'completed';
+                                    $isOverdue = $r['status'] === 'overdue';
+                                    $rowColor = $isCompleted ? 'var(--mute-soft)' : 'var(--ink)';
+                                ?>
+                                <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                    <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
+                                    <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['id']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <div class="flex flex-col">
+                                            <span class="text-[12px] font-medium mono" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['vehicle']) ?></span>
+                                            <span class="text-[11px]" style="color: var(--mute);"><?= htmlspecialchars($r['model']) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['type']) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono font-medium" style="color: <?= $isOverdue ? '#963B33' : ($isCompleted ? 'var(--mute-soft)' : 'var(--ink)') ?>;"><?= htmlspecialchars(date('d M Y', strtotime($r['date']))) ?></td>
+                                    <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($r['cost']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
+                                            <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
+                                        </span>
+                                    </td>
+                                    <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
+                                        <a href="maintenance_details.php?id=<?= urlencode($r['id']) ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">View Ticket</a>
+                                        <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($maintenance_records) ?> of 14 Active Tickets</span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($maintenance_records) ?> of Total Tickets</span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>

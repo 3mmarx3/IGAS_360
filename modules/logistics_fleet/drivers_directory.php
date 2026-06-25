@@ -5,6 +5,14 @@ $active_page = 'drivers_directory';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Drivers Directory'];
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $driver_id_to_delete = $_POST['driver_id'] ?? '';
+    if (!empty($driver_id_to_delete)) {
+        $stmt_del = $pdo->prepare("DELETE FROM drivers WHERE id = ?");
+        $stmt_del->execute([$driver_id_to_delete]);
+    }
+}
+
 $stmt_stats = $pdo->query("SELECT status, COUNT(*) as count FROM drivers GROUP BY status");
 $stats = $stmt_stats->fetchAll(PDO::FETCH_KEY_PAIR);
 
@@ -56,29 +64,14 @@ function getInitials($name) {
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
+            --ink: #1A1A1A; --ink-soft: #2E2E2E; --paper: #FFFFFF; --paper-dim: #F7F7F6;
+            --paper-deep: #EFEEEC; --line: #D8D6D1; --line-soft: #E7E5E1; --accent: #9A7B2E;
+            --accent-soft: #FBF3DF; --mute: #767470; --mute-soft: #A6A39D; --sidebar: #1A1A1A;
+            --sidebar-line: #2E2E2E; --sidebar-text: #B8B6B1;
         }
         * { box-sizing: border-box; }
         html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
+        body { font-family: 'IBM Plex Sans', sans-serif; background-color: var(--paper-dim); color: var(--ink); font-feature-settings: "tnum" 1; }
         .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
         .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -86,34 +79,25 @@ function getInitials($name) {
         ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
         a, button { -webkit-tap-highlight-color: transparent; }
-
         .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
         .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
         .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-
         .card { background: var(--paper); border: 1px solid var(--line-soft); }
-
         .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
+        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; border: none; }
         .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
+        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
         .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-
         th, td { vertical-align: middle; }
-
         .tab-item { position: relative; transition: color 0.15s ease; cursor: pointer; padding-bottom: 11px; }
         .tab-item::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; transition: background 0.15s ease; }
         .tab-item.active { color: var(--ink); }
         .tab-item.active::after { background: var(--ink); }
         .tab-item:not(.active) { color: var(--mute); }
         .tab-item:not(.active):hover { color: var(--ink); }
-
         .avatar-sq { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 600; flex-shrink: 0; border-radius: 3px; }
-
         .checkbox-sq { width: 15px; height: 15px; border: 1.5px solid var(--mute-soft); border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; transition: border-color 0.15s ease; }
         .checkbox-sq:hover { border-color: var(--ink); }
-
         .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 3px; line-height: 1; }
     </style>
 </head>
@@ -278,18 +262,31 @@ function getInitials($name) {
                                         <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
                                     </span>
                                 </td>
-                                <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
-                                    <a href="driver_profile.php?id=<?= $d['id'] ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">Profile</a>
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                                <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-4">
+                                    <a href="driver_profile.php?id=<?= $d['id'] ?>" class="transition-colors" style="color: var(--mute); text-decoration: none;" title="View Profile" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
+                                        <i data-lucide="eye" class="w-4 h-4"></i>
+                                    </a>
+                                    <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('Are you sure you want to delete this driver?');">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="driver_id" value="<?= htmlspecialchars($d['id']) ?>">
+                                        <button type="submit" class="transition-colors bg-transparent border-none cursor-pointer flex items-center" style="color: #963B33; padding: 0;" title="Delete Driver" onmouseover="this.style.color='#7a2d26'" onmouseout="this.style.color='#963B33'">
+                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
+                            <?php if (empty($drivers_data)): ?>
+                            <tr>
+                                <td colspan="8" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No drivers found in the directory.</td>
+                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($drivers_data) ?> of <?= $total_drivers ?></span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($drivers_data) > 0 ? '1' : '0' ?>–<?= count($drivers_data) ?> of <?= $total_drivers ?></span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>
@@ -304,5 +301,5 @@ function getInitials($name) {
     <script>
         lucide.createIcons();
     </script>
-</body>
+</body> 
 </html>

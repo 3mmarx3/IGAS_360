@@ -1,9 +1,81 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'dispatch_delivery';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Dispatch & Delivery', 'New Dispatch'];
 
-$new_manifest_id = 'DSP-' . rand(907, 999);
+$error_msg = '';
+
+try {
+    $stmt_seq = $pdo->query("SELECT COUNT(id) FROM dispatches");
+    $count = $stmt_seq->fetchColumn();
+    $new_manifest_id = 'DSP-' . str_pad($count + 907, 4, '0', STR_PAD_LEFT);
+
+    $stmt_orders = $pdo->query("SELECT order_number FROM purchase_orders WHERE status IN ('draft', 'processing') ORDER BY id DESC");
+    $orders = $stmt_orders->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt_vehicles = $pdo->query("SELECT fleet_id, make_model, plate_number, driver_id FROM vehicles WHERE status = 'available' ORDER BY fleet_id ASC");
+    $vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt_drivers = $pdo->query("SELECT driver_id, full_name, assigned_vehicle FROM drivers WHERE status = 'active' ORDER BY full_name ASC");
+    $drivers = $stmt_drivers->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) {
+    $orders = [];
+    $vehicles = [];
+    $drivers = [];
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $manifest_id = $_POST['manifest_id'] ?? $new_manifest_id;
+    $order_ref = $_POST['order_ref'] ?? '';
+    $vehicle_id = $_POST['vehicle_id'] ?? '';
+    $driver_id = $_POST['driver_id'] ?? '';
+    $destination = trim($_POST['destination'] ?? '');
+    $dispatch_date = $_POST['dispatch_date'] ?? '';
+    $eta_time = $_POST['eta_time'] ?? '';
+    $instructions = trim($_POST['instructions'] ?? '');
+
+    if (empty($order_ref) || empty($vehicle_id) || empty($driver_id) || empty($destination) || empty($dispatch_date) || empty($eta_time)) {
+        $error_msg = "Please fill in all required fields.";
+    } else {
+        try {
+            $pdo->beginTransaction();
+
+            $stmt = $pdo->prepare("
+                INSERT INTO dispatches (manifest_id, order_ref, vehicle_id, driver_id, destination, dispatch_date, eta_time, instructions)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([$manifest_id, $order_ref, $vehicle_id, $driver_id, $destination, $dispatch_date, $eta_time, $instructions]);
+
+            $stmt_v = $pdo->prepare("UPDATE vehicles SET status = 'in_transit' WHERE fleet_id = ?");
+            $stmt_v->execute([$vehicle_id]);
+
+            $pdo->commit();
+            header("Location: dispatch_delivery.php");
+            exit;
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            $error_msg = "Error creating dispatch manifest. Manifest ID might already exist.";
+        }
+    }
+}
+
+// خرائط الربط بين السواق والسيارة (مأخوذة من الداتابيز: drivers.assigned_vehicle و vehicles.driver_id)
+$driver_to_vehicle = [];
+foreach ($drivers as $d) {
+    if (!empty($d['assigned_vehicle']) && $d['assigned_vehicle'] !== 'unassigned') {
+        $driver_to_vehicle[$d['driver_id']] = $d['assigned_vehicle'];
+    }
+}
+
+$vehicle_to_driver = [];
+foreach ($vehicles as $v) {
+    if (!empty($v['driver_id']) && $v['driver_id'] !== 'unassigned') {
+        $vehicle_to_driver[$v['fleet_id']] = $v['driver_id'];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -69,6 +141,9 @@ $new_manifest_id = 'DSP-' . rand(907, 999);
         .input-group { position: relative; display: flex; align-items: center; }
         .input-icon { position: absolute; left: 12px; color: var(--mute-soft); pointer-events: none; }
         .has-icon { padding-left: 36px; }
+
+        .auto-hint { font-size: 11px; color: var(--accent); margin-top: 5px; display: none; align-items: center; gap: 4px; }
+        .auto-hint.show { display: flex; }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden antialiased">
@@ -102,7 +177,15 @@ $new_manifest_id = 'DSP-' . rand(907, 999);
                     <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Authorize vehicle deployment, bind sales references, and establish logistics routing.</p>
                 </div>
 
-                <form action="dispatch_delivery.php" method="POST" class="card rounded-md flex flex-col overflow-hidden">
+                <?php if ($error_msg): ?>
+                    <div class="mb-5 p-3 rounded-sm text-[13px] font-medium" style="background: #F8E9E7; color: #963B33; border: 1px solid #963B33;">
+                        <?= htmlspecialchars($error_msg) ?>
+                    </div>
+                <?php endif; ?>
+
+                <form action="" method="POST" class="card rounded-md flex flex-col overflow-hidden">
+                    <input type="hidden" name="manifest_id" value="<?= htmlspecialchars($new_manifest_id) ?>">
+                    
                     <div class="p-8">
                         <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
                             <i data-lucide="file-text" class="w-4 h-4" style="color: var(--mute);"></i>Manifest Context
@@ -111,16 +194,15 @@ $new_manifest_id = 'DSP-' . rand(907, 999);
                         <div class="grid grid-cols-2 gap-6 mb-8">
                             <div>
                                 <label class="form-label">Manifest ID</label>
-                                <input type="text" class="form-input readonly mono num" value="<?= $new_manifest_id ?>" disabled>
+                                <input type="text" class="form-input readonly mono num" value="<?= htmlspecialchars($new_manifest_id) ?>" disabled>
                             </div>
                             <div>
                                 <label class="form-label">Linked Order Reference</label>
                                 <select class="form-select mono" name="order_ref" required>
                                     <option value="" disabled selected>Select active order...</option>
-                                    <option value="ORD-7742">ORD-7742 (SABIC Petrochemicals)</option>
-                                    <option value="ORD-7690">ORD-7690 (Air Product Co.)</option>
-                                    <option value="ORD-7654">ORD-7654 (Red Sea Marine Services)</option>
-                                    <option value="ORD-7521">ORD-7521 (National Contracting)</option>
+                                    <?php foreach ($orders as $o): ?>
+                                        <option value="<?= htmlspecialchars($o['order_number']) ?>"><?= htmlspecialchars($o['order_number']) ?></option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                         </div>
@@ -134,21 +216,29 @@ $new_manifest_id = 'DSP-' . rand(907, 999);
                         <div class="grid grid-cols-2 gap-6 mb-8">
                             <div>
                                 <label class="form-label">Assign Fleet Asset</label>
-                                <select class="form-select mono" name="vehicle_id" required>
+                                <select class="form-select mono" name="vehicle_id" id="vehicle_select" required>
                                     <option value="" disabled selected>Select available vehicle...</option>
-                                    <option value="FLT-002">FLT-002 (Flatbed Truck — R N B 9876)</option>
-                                    <option value="FLT-006">FLT-006 (Pickup Truck — X Y Z 1122)</option>
-                                    <option value="FLT-007">FLT-007 (Flatbed Truck — A B C 9988)</option>
+                                    <?php foreach ($vehicles as $v): ?>
+                                        <option value="<?= htmlspecialchars($v['fleet_id']) ?>">
+                                            <?= htmlspecialchars($v['fleet_id']) ?> (<?= htmlspecialchars($v['make_model']) ?> — <?= htmlspecialchars($v['plate_number']) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
+                                <div class="auto-hint" id="vehicle_auto_hint">
+                                    <i data-lucide="link" class="w-3 h-3"></i><span>Auto-selected based on assigned driver</span>
+                                </div>
                             </div>
                             <div>
                                 <label class="form-label">Assign Driver</label>
-                                <select class="form-select" name="driver_id" required>
+                                <select class="form-select" name="driver_id" id="driver_select" required>
                                     <option value="" disabled selected>Select available personnel...</option>
-                                    <option value="1">Mohammed Saad</option>
-                                    <option value="2">Khalid Hassan</option>
-                                    <option value="3">Tariq Nabil</option>
+                                    <?php foreach ($drivers as $d): ?>
+                                        <option value="<?= htmlspecialchars($d['driver_id']) ?>"><?= htmlspecialchars($d['full_name']) ?></option>
+                                    <?php endforeach; ?>
                                 </select>
+                                <div class="auto-hint" id="driver_auto_hint">
+                                    <i data-lucide="link" class="w-3 h-3"></i><span>Auto-selected based on assigned vehicle</span>
+                                </div>
                             </div>
                         </div>
 
@@ -161,25 +251,25 @@ $new_manifest_id = 'DSP-' . rand(907, 999);
                         <div class="grid grid-cols-2 gap-6">
                             <div class="col-span-2">
                                 <label class="form-label">Destination Address / Drop-off Coordinates</label>
-                                <input type="text" class="form-input" placeholder="e.g. Industrial City 2, Gate 4, Jubail" required>
+                                <input type="text" name="destination" class="form-input" placeholder="e.g. Industrial City 2, Gate 4, Jubail" required>
                             </div>
                             <div>
                                 <label class="form-label">Dispatch Gate Out Date</label>
                                 <div class="input-group">
                                     <i data-lucide="calendar" class="w-4 h-4 input-icon"></i>
-                                    <input type="date" class="form-input has-icon mono num" value="<?= date('Y-m-d') ?>" required>
+                                    <input type="date" name="dispatch_date" class="form-input has-icon mono num" value="<?= date('Y-m-d') ?>" required>
                                 </div>
                             </div>
                             <div>
                                 <label class="form-label">Expected Arrival (ETA)</label>
                                 <div class="input-group">
                                     <i data-lucide="clock" class="w-4 h-4 input-icon"></i>
-                                    <input type="time" class="form-input has-icon mono num" required>
+                                    <input type="time" name="eta_time" class="form-input has-icon mono num" required>
                                 </div>
                             </div>
                             <div class="col-span-2">
                                 <label class="form-label">Special Delivery / Safety Manifest Instructions</label>
-                                <textarea class="form-input" rows="3" placeholder="Enter security clearance protocols, hazmat pressure validation notes, or site contact criteria..."></textarea>
+                                <textarea name="instructions" class="form-input" rows="3" placeholder="Enter security clearance protocols, hazmat pressure validation notes, or site contact criteria..."></textarea>
                             </div>
                         </div>
                     </div>
@@ -196,6 +286,53 @@ $new_manifest_id = 'DSP-' . rand(907, 999);
 
     <script>
         lucide.createIcons();
+
+        // خرائط الربط بين السواق والسيارة، جاية من الداتابيز (drivers.assigned_vehicle و vehicles.driver_id)
+        const driverToVehicle = <?= json_encode($driver_to_vehicle, JSON_UNESCAPED_UNICODE) ?>;
+        const vehicleToDriver = <?= json_encode($vehicle_to_driver, JSON_UNESCAPED_UNICODE) ?>;
+
+        const vehicleSelect = document.getElementById('vehicle_select');
+        const driverSelect = document.getElementById('driver_select');
+        const vehicleAutoHint = document.getElementById('vehicle_auto_hint');
+        const driverAutoHint = document.getElementById('driver_auto_hint');
+
+        let isSyncing = false;
+
+        driverSelect.addEventListener('change', function () {
+            if (isSyncing) return;
+            const selectedDriverId = this.value;
+            const linkedVehicle = driverToVehicle[selectedDriverId];
+
+            vehicleAutoHint.classList.remove('show');
+
+            if (linkedVehicle) {
+                const optionExists = Array.from(vehicleSelect.options).some(opt => opt.value === linkedVehicle);
+                if (optionExists) {
+                    isSyncing = true;
+                    vehicleSelect.value = linkedVehicle;
+                    isSyncing = false;
+                    vehicleAutoHint.classList.add('show');
+                }
+            }
+        });
+
+        vehicleSelect.addEventListener('change', function () {
+            if (isSyncing) return;
+            const selectedVehicleId = this.value;
+            const linkedDriver = vehicleToDriver[selectedVehicleId];
+
+            driverAutoHint.classList.remove('show');
+
+            if (linkedDriver) {
+                const optionExists = Array.from(driverSelect.options).some(opt => opt.value === linkedDriver);
+                if (optionExists) {
+                    isSyncing = true;
+                    driverSelect.value = linkedDriver;
+                    isSyncing = false;
+                    driverAutoHint.classList.add('show');
+                }
+            }
+        });
     </script>
 </body>
 </html>

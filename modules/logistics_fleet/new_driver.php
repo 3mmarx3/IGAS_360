@@ -50,8 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$stmt_vehicles = $pdo->query("SELECT fleet_id, make_model FROM vehicles WHERE driver_id = 'unassigned' OR driver_id IS NULL");
-$unassigned_vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
+$stmt_vehicles = $pdo->query("SELECT fleet_id, make_model, driver_id FROM vehicles ORDER BY fleet_id ASC");
+$all_vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -115,6 +115,8 @@ $unassigned_vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
         .input-icon { position: absolute; left: 12px; color: var(--mute-soft); pointer-events: none; }
         .has-icon { padding-left: 36px; }
         .form-input.readonly { background: var(--paper-deep); color: var(--mute); cursor: not-allowed; border-color: var(--line-soft); }
+        
+        select option[disabled] { color: #A6A39D; font-style: italic; }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden antialiased">
@@ -243,9 +245,14 @@ $unassigned_vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
                                     <label class="form-label">Assign to Vehicle</label>
                                     <select name="assigned_vehicle" class="form-select mono">
                                         <option value="unassigned" selected>-- Unassigned --</option>
-                                        <?php foreach ($unassigned_vehicles as $veh): ?>
-                                            <option value="<?= htmlspecialchars($veh['fleet_id']) ?>">
-                                                <?= htmlspecialchars($veh['fleet_id']) ?> (<?= htmlspecialchars($veh['make_model']) ?>)
+                                        <?php foreach ($all_vehicles as $veh): ?>
+                                            <?php 
+                                            $is_assigned = (!empty($veh['driver_id']) && strtolower($veh['driver_id']) !== 'unassigned');
+                                            $disabled_attr = $is_assigned ? 'disabled' : '';
+                                            $suffix = $is_assigned ? ' [Assigned to ' . htmlspecialchars($veh['driver_id']) . ']' : '';
+                                            ?>
+                                            <option value="<?= htmlspecialchars($veh['fleet_id']) ?>" <?= $disabled_attr ?>>
+                                                <?= htmlspecialchars($veh['fleet_id']) ?> (<?= htmlspecialchars($veh['make_model']) ?>)<?= $suffix ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>

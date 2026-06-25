@@ -1,45 +1,167 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'dispatch_delivery';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Dispatch & Delivery', 'Manifest Details'];
 
-$dispatch_id = $_GET['id'] ?? 'DSP-901';
+$dispatch_id = $_GET['id'] ?? '';
+
+$stmt = $pdo->prepare("
+    SELECT 
+        d.manifest_id as id,
+        d.order_ref,
+        p.company_name as client,
+        d.destination,
+        d.vehicle_id,
+        v.make_model as vehicle_name,
+        v.plate_number as plate,
+        d.driver_id,
+        dr.full_name as driver_name,
+        dr.mobile_number as driver_phone,
+        d.status,
+        d.eta_time as eta,
+        d.dispatch_date,
+        d.created_at,
+        d.instructions
+    FROM dispatches d
+    LEFT JOIN purchase_orders po ON d.order_ref = po.order_number
+    LEFT JOIN partners p ON po.client_id = p.id
+    LEFT JOIN vehicles v ON d.vehicle_id = v.fleet_id
+    LEFT JOIN drivers dr ON d.driver_id = dr.driver_id
+    WHERE d.manifest_id = ?
+");
+$stmt->execute([$dispatch_id]);
+$dispatch_data = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$dispatch_data) {
+    header("Location: dispatch_delivery.php");
+    exit;
+}
+
+$stmt_items = $pdo->prepare("
+    SELECT pi.item_name, pi.qty, pi.unit
+    FROM purchase_order_items pi
+    JOIN purchase_orders po ON pi.purchase_order_id = po.id
+    WHERE po.order_number = ?
+    LIMIT 1
+");
+$stmt_items->execute([$dispatch_data['order_ref']]);
+$item_data = $stmt_items->fetch(PDO::FETCH_ASSOC);
+
+$gas_type = $item_data['item_name'] ?? 'Multiple Items / Mixed Freight';
+$quantity = $item_data['qty'] ?? 'N/A';
+$unit = $item_data['unit'] ?? '';
 
 $dispatch = [
-    'id' => $dispatch_id,
-    'order_ref' => 'ORD-7742',
-    'client' => 'SABIC Petrochemicals',
-    'destination' => 'Jubail Industrial 2, Gate 4',
-    'vehicle_id' => 'FLT-001',
-    'vehicle_name' => 'Mercedes Actros',
-    'plate' => 'T S A 1234',
-    'driver_id' => 'DRV-101',
-    'driver_name' => 'Ahmed Ali',
-    'driver_phone' => '+966 50 111 2233',
-    'status' => 'transit',
-    'eta' => '16:45',
-    'gas_type' => 'LIQ. O₂ (Liquid Oxygen)',
-    'quantity' => '20',
-    'unit' => 'Metric Tons',
-    'created_at' => '2026-06-22 08:30',
+    'id' => $dispatch_data['id'],
+    'order_ref' => $dispatch_data['order_ref'],
+    'client' => $dispatch_data['client'] ?? 'Unknown Client',
+    'destination' => $dispatch_data['destination'],
+    'vehicle_id' => $dispatch_data['vehicle_id'],
+    'vehicle_name' => $dispatch_data['vehicle_name'] ?? 'Unknown Vehicle',
+    'plate' => $dispatch_data['plate'] ?? '---',
+    'driver_id' => $dispatch_data['driver_id'],
+    'driver_name' => $dispatch_data['driver_name'] ?? 'Unassigned',
+    'driver_phone' => $dispatch_data['driver_phone'] ?? '---',
+    'status' => strtolower($dispatch_data['status']),
+    'eta' => date('H:i', strtotime($dispatch_data['eta'])),
+    'gas_type' => $gas_type,
+    'quantity' => $quantity,
+    'unit' => $unit,
+    'created_at' => date('Y-m-d H:i', strtotime($dispatch_data['created_at'])),
+    'instructions' => $dispatch_data['instructions'] ?: 'Standard procedures apply.',
+    'dispatch_date' => $dispatch_data['dispatch_date']
 ];
 
-$timeline = [
-    ['time' => '08:45', 'date' => '22 Jun 2026', 'title' => 'Manifest Generated', 'desc' => 'Dispatch order created and routed to logistics.', 'status' => 'past'],
-    ['time' => '09:30', 'date' => '22 Jun 2026', 'title' => 'Vehicle Loading', 'desc' => 'Freight secured and safety checks completed.', 'status' => 'past'],
-    ['time' => '10:15', 'date' => '22 Jun 2026', 'title' => 'Gate Out (Dispatched)', 'desc' => 'Vehicle left Jeddah Industrial HQ.', 'status' => 'past'],
-    ['time' => 'Current', 'date' => 'Tracking', 'title' => 'In Transit', 'desc' => 'En route to Jubail Industrial 2.', 'status' => 'current'],
-    ['time' => '16:45', 'date' => 'ETA', 'title' => 'Expected Delivery', 'desc' => 'Pending arrival and client sign-off.', 'status' => 'future'],
+$creation_date = date('d M Y', strtotime($dispatch['created_at']));
+$creation_time = date('H:i', strtotime($dispatch['created_at']));
+$disp_date_fmt = date('d M Y', strtotime($dispatch['dispatch_date']));
+
+$is_dispatched = $dispatch['status'] === 'dispatched';
+$is_transit    = $dispatch['status'] === 'in_transit';
+$is_delivered  = $dispatch['status'] === 'delivered';
+$is_cancelled  = $dispatch['status'] === 'cancelled';
+
+$timeline = [];
+
+$timeline[] = [
+    'time' => $creation_time, 
+    'date' => $creation_date, 
+    'title' => 'Manifest Generated', 
+    'desc' => 'Dispatch order created and routed to logistics.', 
+    'status' => 'past'
 ];
+
+if ($is_cancelled) {
+    $timeline[] = [
+        'time' => 'N/A', 
+        'date' => $disp_date_fmt, 
+        'title' => 'Dispatch Cancelled', 
+        'desc' => 'The dispatch operation was aborted.', 
+        'status' => 'current'
+    ];
+} else {
+    $timeline[] = [
+        'time' => '--:--', 
+        'date' => $disp_date_fmt, 
+        'title' => 'Vehicle Loading', 
+        'desc' => 'Freight secured and safety checks completed.', 
+        'status' => ($is_dispatched ? 'current' : 'past')
+    ];
+
+    if ($is_transit || $is_delivered) {
+        $timeline[] = [
+            'time' => '--:--', 
+            'date' => $disp_date_fmt, 
+            'title' => 'Gate Out (Dispatched)', 
+            'desc' => 'Vehicle left HQ / Origin point.', 
+            'status' => 'past'
+        ];
+        $timeline[] = [
+            'time' => 'Tracking', 
+            'date' => 'Live', 
+            'title' => 'In Transit', 
+            'desc' => 'En route to ' . htmlspecialchars($dispatch['destination']) . '.', 
+            'status' => ($is_transit ? 'current' : 'past')
+        ];
+    } else {
+        $timeline[] = [
+            'time' => 'Pending', 
+            'date' => 'TBD', 
+            'title' => 'Gate Out & Transit', 
+            'desc' => 'Awaiting vehicle departure.', 
+            'status' => 'future'
+        ];
+    }
+
+    if ($is_delivered) {
+        $timeline[] = [
+            'time' => '--:--', 
+            'date' => '--', 
+            'title' => 'Delivered', 
+            'desc' => 'Arrived at destination and client signed off.', 
+            'status' => 'current'
+        ];
+    } else {
+        $timeline[] = [
+            'time' => $dispatch['eta'], 
+            'date' => 'ETA', 
+            'title' => 'Expected Delivery', 
+            'desc' => 'Pending arrival and client sign-off.', 
+            'status' => 'future'
+        ];
+    }
+}
 
 $statusStyles = [
-    'loading'   => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Loading'],
-    'transit'   => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'In Transit'],
-    'delivered' => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Delivered'],
-    'delayed'   => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Delayed'],
+    'dispatched' => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Loading'],
+    'in_transit' => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'In Transit'],
+    'delivered'  => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Delivered'],
+    'cancelled'  => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Cancelled'],
 ];
 
-$ds = $statusStyles[$dispatch['status']];
+$ds = $statusStyles[$dispatch['status']] ?? $statusStyles['dispatched'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -165,7 +287,6 @@ $ds = $statusStyles[$dispatch['status']];
                                 <p class="info-label">Linked Order Reference</p>
                                 <p class="info-value mono flex items-center gap-2">
                                     <?= htmlspecialchars($dispatch['order_ref']) ?>
-                                    <a href="#" class="text-[11px] underline" style="color: var(--mute);">View Order</a>
                                 </p>
                             </div>
                             <div class="info-group">
@@ -190,7 +311,7 @@ $ds = $statusStyles[$dispatch['status']];
                                     <?= htmlspecialchars($dispatch['vehicle_name']) ?>
                                 </p>
                                 <p class="text-[12px] mono mt-1" style="color: var(--mute);"><?= htmlspecialchars($dispatch['vehicle_id']) ?> — <?= htmlspecialchars($dispatch['plate']) ?></p>
-                                <a href="vehicle_logs.php?id=<?= $dispatch['vehicle_id'] ?>" class="text-[11px] font-medium underline mt-2 inline-block" style="color: var(--ink);">View Vehicle Logs</a>
+                                <a href="vehicle_logs.php?id=<?= urlencode($dispatch['vehicle_id']) ?>" class="text-[11px] font-medium underline mt-2 inline-block" style="color: var(--ink);">View Vehicle Logs</a>
                             </div>
 
                             <div class="info-group mb-0 mt-6 pt-6 border-t" style="border-color: var(--line-soft);">
@@ -200,7 +321,6 @@ $ds = $statusStyles[$dispatch['status']];
                                     <?= htmlspecialchars($dispatch['driver_name']) ?>
                                 </p>
                                 <p class="text-[12px] mono mt-1" style="color: var(--mute);"><?= htmlspecialchars($dispatch['driver_id']) ?> — <?= htmlspecialchars($dispatch['driver_phone']) ?></p>
-                                <a href="driver_profile.php?id=<?= $dispatch['driver_id'] ?>" class="text-[11px] font-medium underline mt-2 inline-block" style="color: var(--ink);">View Driver Profile</a>
                             </div>
                         </div>
 
@@ -218,8 +338,8 @@ $ds = $statusStyles[$dispatch['status']];
                             </div>
 
                             <div class="info-group mb-0 mt-6 pt-6 border-t" style="border-color: var(--line-soft);">
-                                <p class="info-label">Safety Requirements</p>
-                                <p class="text-[12.5px] mt-1" style="color: var(--mute-soft);">Standard Hazmat procedures apply. Ensure cryogenic valves are sealed before departure.</p>
+                                <p class="info-label">Safety & Delivery Instructions</p>
+                                <p class="text-[12.5px] mt-1" style="color: var(--mute-soft);"><?= htmlspecialchars($dispatch['instructions']) ?></p>
                             </div>
                         </div>
                     </div>

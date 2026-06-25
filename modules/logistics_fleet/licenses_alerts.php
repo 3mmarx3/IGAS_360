@@ -1,21 +1,88 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'drivers_directory';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Licenses & Alerts'];
 
-$alerts = [
-    ['id' => 'DRV-106', 'name' => 'Yasser Abdullah', 'type' => 'Driver License', 'expiry' => '2026-06-30', 'days' => 7, 'status' => 'critical'],
-    ['id' => 'FLT-004', 'name' => 'Volvo FH16', 'type' => 'Vehicle Registration', 'expiry' => '2026-06-25', 'days' => 2, 'status' => 'critical'],
-    ['id' => 'DRV-102', 'name' => 'Mohammed Saad', 'type' => 'Hazmat Permit', 'expiry' => '2026-07-20', 'days' => 27, 'status' => 'warning'],
-    ['id' => 'FLT-006', 'name' => 'Toyota Hilux', 'type' => 'Commercial Insurance', 'expiry' => '2026-07-25', 'days' => 32, 'status' => 'warning'],
-    ['id' => 'DRV-105', 'name' => 'Khalid Hassan', 'type' => 'Driver License', 'expiry' => '2026-08-10', 'days' => 48, 'status' => 'warning'],
-    ['id' => 'FLT-002', 'name' => 'Isuzu NPR', 'type' => 'Civil Defense Permit', 'expiry' => '2026-06-20', 'days' => -3, 'status' => 'expired'],
-];
+$renew_message = '';
 
-$total_alerts  = 24;
-$critical_docs = 4;
-$warning_docs  = 20;
-$compliance    = 94.5;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'renew') {
+    $entity_id = $_POST['entity_id'] ?? '';
+    $doc_type  = $_POST['doc_type'] ?? '';
+    $new_date  = date('Y-m-d', strtotime('+1 year'));
+
+    if ($doc_type === 'Driver License') {
+        $stmt = $pdo->prepare("UPDATE drivers SET license_expiry = ? WHERE driver_id = ?");
+        $stmt->execute([$new_date, $entity_id]);
+    } elseif ($doc_type === 'Medical Certificate') {
+        $stmt = $pdo->prepare("UPDATE drivers SET medical_expiry = ? WHERE driver_id = ?");
+        $stmt->execute([$new_date, $entity_id]);
+    } elseif ($doc_type === 'Vehicle Registration') {
+        $stmt = $pdo->prepare("UPDATE vehicles SET registration_expiry = ? WHERE fleet_id = ?");
+        $stmt->execute([$new_date, $entity_id]);
+    } elseif ($doc_type === 'Commercial Insurance') {
+        $stmt = $pdo->prepare("UPDATE vehicles SET insurance_expiry = ? WHERE fleet_id = ?");
+        $stmt->execute([$new_date, $entity_id]);
+    }
+    
+    $renew_message = "Document {$doc_type} for ID {$entity_id} successfully renewed until {$new_date}.";
+}
+
+$stmt = $pdo->query("
+    SELECT driver_id as id, full_name as name, 'Driver License' as type, license_expiry as expiry FROM drivers WHERE license_expiry IS NOT NULL
+    UNION ALL
+    SELECT driver_id, full_name, 'Medical Certificate', medical_expiry FROM drivers WHERE medical_expiry IS NOT NULL
+    UNION ALL
+    SELECT fleet_id, make_model, 'Vehicle Registration', registration_expiry FROM vehicles WHERE registration_expiry IS NOT NULL
+    UNION ALL
+    SELECT fleet_id, make_model, 'Commercial Insurance', insurance_expiry FROM vehicles WHERE insurance_expiry IS NOT NULL
+");
+$all_docs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$alerts = [];
+$total_monitored = count($all_docs);
+$critical_docs = 0;
+$warning_docs  = 0;
+$valid_docs = 0;
+
+$today = new DateTime();
+
+foreach ($all_docs as $doc) {
+    $exp = new DateTime($doc['expiry']);
+    $diff = $today->diff($exp);
+    $days = (int)$diff->format('%R%a');
+
+    $status = 'active';
+    if ($days < 0) {
+        $status = 'expired';
+        $critical_docs++;
+    } elseif ($days <= 7) {
+        $status = 'critical';
+        $critical_docs++;
+    } elseif ($days <= 30) {
+        $status = 'warning';
+        $warning_docs++;
+    } else {
+        $valid_docs++;
+    }
+
+    if ($status !== 'active') {
+        $alerts[] = [
+            'id'     => $doc['id'],
+            'name'   => $doc['name'],
+            'type'   => $doc['type'],
+            'expiry' => $doc['expiry'],
+            'days'   => $days,
+            'status' => $status
+        ];
+    }
+}
+
+usort($alerts, fn($a, $b) => $a['days'] <=> $b['days']);
+
+$total_alerts = count($alerts);
+$compliance = $total_monitored > 0 ? round(($valid_docs / $total_monitored) * 100, 1) : 100;
 
 $statusStyles = [
     'expired'  => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Expired'],
@@ -25,6 +92,7 @@ $statusStyles = [
 
 $iconMap = [
     'Driver License'       => 'id-card',
+    'Medical Certificate'  => 'activity',
     'Hazmat Permit'        => 'flame',
     'Vehicle Registration' => 'file-text',
     'Commercial Insurance' => 'shield',
@@ -41,7 +109,7 @@ $iconMap = [
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
-<link rel="stylesheet" href="../../assets/css/main.css">
+    <link rel="stylesheet" href="../../assets/css/main.css">
 </head>
 <body class="flex h-screen overflow-hidden antialiased">
 
@@ -63,6 +131,13 @@ $iconMap = [
 
         <div class="flex-1 overflow-auto px-8 py-7">
 
+            <?php if (!empty($renew_message)): ?>
+            <div class="mb-6 px-4 py-3 rounded-md text-[13.5px] font-medium flex items-center gap-3" style="background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9;">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                <?= htmlspecialchars($renew_message) ?>
+            </div>
+            <?php endif; ?>
+
             <div class="flex justify-between items-end mb-7">
                 <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2" style="color: var(--mute);">Logistics &amp; Fleet</p>
@@ -82,7 +157,7 @@ $iconMap = [
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <div class="card rounded-md p-5">
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Monitored Docs</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);">342</h3>
+                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= $total_monitored ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
                         <span style="color: var(--mute);">Across personnel &amp; fleet</span>
                     </div>
@@ -190,17 +265,27 @@ $iconMap = [
                                     </span>
                                 </td>
                                 <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
-                                    <button class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">Renew</button>
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                                    <form method="POST" action="" class="m-0 p-0 inline-block">
+                                        <input type="hidden" name="action" value="renew">
+                                        <input type="hidden" name="entity_id" value="<?= htmlspecialchars($a['id']) ?>">
+                                        <input type="hidden" name="doc_type" value="<?= htmlspecialchars($a['type']) ?>">
+                                        <button type="submit" class="text-[12px] font-medium bg-transparent cursor-pointer" style="color: var(--ink); border: none; border-bottom: 1px solid var(--ink); padding: 0;">Renew</button>
+                                    </form>
+                                    <button class="transition-colors bg-transparent border-none cursor-pointer" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
+                            <?php if (empty($alerts)): ?>
+                            <tr>
+                                <td colspan="7" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No compliance alerts at this moment. All documents are up to date.</td>
+                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($alerts) ?> of <?= $total_alerts ?> Pending Alerts</span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($alerts) > 0 ? '1' : '0' ?>–<?= count($alerts) ?> of <?= $total_alerts ?> Pending Alerts</span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>

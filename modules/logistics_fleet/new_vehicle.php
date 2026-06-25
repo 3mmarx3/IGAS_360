@@ -7,6 +7,13 @@ $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Add New Vehicle'];
 
 $error_msg = '';
 
+try {
+    $stmt_drivers = $pdo->query("SELECT driver_id, full_name FROM drivers WHERE status = 'active' ORDER BY full_name ASC");
+    $drivers = $stmt_drivers->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $drivers = [];
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fleet_id = $_POST['fleet_id'] ?? '';
     $plate_number = trim($_POST['plate_number'] ?? '');
@@ -227,10 +234,11 @@ $next_fleet_id = 'FLT-' . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
                                 <label class="form-label">Assigned Driver</label>
                                 <select name="driver_id" class="form-select">
                                     <option value="unassigned">Unassigned</option>
-                                    <option value="1">Ahmed Ali</option>
-                                    <option value="2">Mohammed Saad</option>
-                                    <option value="3">Faisal Omar</option>
-                                    <option value="4">Sayed Mahmoud</option>
+                                    <?php foreach ($drivers as $driver): ?>
+                                        <option value="<?= htmlspecialchars($driver['driver_id']) ?>">
+                                            <?= htmlspecialchars($driver['full_name']) ?> (<?= htmlspecialchars($driver['driver_id']) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                             <div>

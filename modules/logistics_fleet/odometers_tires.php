@@ -1,22 +1,65 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'vehicles_fleet';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Odometers & Tires'];
 
-$fleet_data = [
-    ['id' => 'FLT-001', 'make' => 'Mercedes Actros', 'odo' => 148500, 'next_service' => 150000, 'tires_health' => 85, 'status' => 'optimal'],
-    ['id' => 'FLT-002', 'make' => 'Isuzu NPR',       'odo' => 91200,  'next_service' => 90000,  'tires_health' => 45, 'status' => 'warning'],
-    ['id' => 'FLT-003', 'make' => 'Hino 500',        'odo' => 112400, 'next_service' => 120000, 'tires_health' => 75, 'status' => 'optimal'],
-    ['id' => 'FLT-004', 'make' => 'Volvo FH16',      'odo' => 208100, 'next_service' => 210000, 'tires_health' => 15, 'status' => 'critical'],
-    ['id' => 'FLT-005', 'make' => 'Toyota Hilux',    'odo' => 45000,  'next_service' => 50000,  'tires_health' => 90, 'status' => 'optimal'],
-    ['id' => 'FLT-006', 'make' => 'Mitsubishi Fuso', 'odo' => 134000, 'next_service' => 130000, 'tires_health' => 30, 'status' => 'warning'],
-    ['id' => 'FLT-007', 'make' => 'Scania R500',     'odo' => 29500,  'next_service' => 30000,  'tires_health' => 95, 'status' => 'optimal'],
-];
+$stmt_total = $pdo->query("SELECT COUNT(*) FROM vehicles");
+$total_fleet = $stmt_total->fetchColumn() ?: 0;
 
-$total_fleet = 28;
-$service_due = 2;
-$tires_critical = 1;
-$avg_health = 74;
+$stmt_vehicles = $pdo->query("
+    SELECT v.fleet_id as id, v.make_model as make, 
+           COALESCE((SELECT MAX(odometer) FROM vehicle_logs WHERE fleet_id = v.fleet_id), 0) as odo
+    FROM vehicles v
+    ORDER BY v.fleet_id ASC
+");
+$db_fleet = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
+
+$fleet_data = [];
+$service_due = 0;
+$tires_critical = 0;
+$total_health = 0;
+
+foreach ($db_fleet as $row) {
+    $odo = (int)$row['odo'];
+    
+    $service_interval = 10000;
+    $next_service = (floor($odo / $service_interval) + 1) * $service_interval;
+    if ($odo === 0) {
+        $next_service = 10000;
+    }
+    
+    $tire_lifespan = 60000;
+    $km_on_tires = $odo % $tire_lifespan;
+    $tires_health = max(0, 100 - round(($km_on_tires / $tire_lifespan) * 100));
+    
+    if ($tires_health < 20) {
+        $status = 'critical';
+        $tires_critical++;
+    } elseif ($tires_health < 50 || ($next_service - $odo) <= 1000) {
+        $status = 'warning';
+    } else {
+        $status = 'optimal';
+    }
+
+    if ($odo >= $next_service || ($next_service - $odo) <= 1000) {
+        $service_due++;
+    }
+
+    $total_health += $tires_health;
+
+    $fleet_data[] = [
+        'id' => $row['id'],
+        'make' => $row['make'],
+        'odo' => $odo,
+        'next_service' => $next_service,
+        'tires_health' => $tires_health,
+        'status' => $status
+    ];
+}
+
+$avg_health = count($fleet_data) > 0 ? round($total_health / count($fleet_data)) : 0;
 
 $statusStyles = [
     'optimal'  => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Healthy'],
@@ -129,7 +172,7 @@ $statusStyles = [
                     <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
                         <i data-lucide="download" class="w-4 h-4"></i>Export Report
                     </button>
-                    <button class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
+                    <button onclick="window.location.reload();" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i>Sync Telematics
                     </button>
                 </div>
@@ -212,46 +255,54 @@ $statusStyles = [
                             </tr>
                         </thead>
                         <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($fleet_data as $row): ?>
-                            <?php
-                                $s = $statusStyles[$row['status']];
-                                $isOdoCritical = $row['odo'] >= $row['next_service'];
-                                $odoColor = $isOdoCritical ? '#963B33' : 'var(--ink)';
-                                $tireColor = $row['tires_health'] < 20 ? '#963B33' : ($row['tires_health'] < 50 ? '#9A7B2E' : '#45663F');
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex flex-col">
-                                        <span class="font-medium mono" style="color: var(--ink);"><?= htmlspecialchars($row['id']) ?></span>
-                                        <span class="text-[11px]" style="color: var(--mute);"><?= htmlspecialchars($row['make']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $odoColor ?>;">
-                                    <?= number_format($row['odo']) ?> <span class="text-[11px] font-normal" style="color: var(--mute);">KM</span>
-                                </td>
-                                <td class="px-3 py-3.5 text-right font-medium num" style="color: var(--mute);">
-                                    <?= number_format($row['next_service']) ?> <span class="text-[11px] font-normal" style="color: var(--mute-soft);">KM</span>
-                                </td>
-                                <td class="px-6 py-3.5">
-                                    <div class="flex items-center gap-3">
-                                        <div class="meter-bar w-32">
-                                            <div class="meter-fill h-full" style="width: <?= $row['tires_health'] ?>%; background: <?= $tireColor ?>;"></div>
-                                        </div>
-                                        <span class="num text-[12.5px] font-medium" style="color: <?= $tireColor ?>;"><?= $row['tires_health'] ?>%</span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
-                                    <a href="manual_entry.php?id=<?= $row['id'] ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">Log Entry</a>
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                            <?php if(empty($fleet_data)): ?>
+                            <tr>
+                                <td colspan="7" class="px-6 py-8 text-center text-[13px]" style="color: var(--mute);">
+                                    No vehicles found in the fleet database.
                                 </td>
                             </tr>
-                            <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($fleet_data as $row): ?>
+                                <?php
+                                    $s = $statusStyles[$row['status']];
+                                    $isOdoCritical = $row['odo'] >= $row['next_service'];
+                                    $odoColor = $isOdoCritical ? '#963B33' : 'var(--ink)';
+                                    $tireColor = $row['tires_health'] < 20 ? '#963B33' : ($row['tires_health'] < 50 ? '#9A7B2E' : '#45663F');
+                                ?>
+                                <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                    <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
+                                    <td class="px-3 py-3.5">
+                                        <div class="flex flex-col">
+                                            <span class="font-medium mono" style="color: var(--ink);"><?= htmlspecialchars($row['id']) ?></span>
+                                            <span class="text-[11px]" style="color: var(--mute);"><?= htmlspecialchars($row['make']) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $odoColor ?>;">
+                                        <?= number_format($row['odo']) ?> <span class="text-[11px] font-normal" style="color: var(--mute);">KM</span>
+                                    </td>
+                                    <td class="px-3 py-3.5 text-right font-medium num" style="color: var(--mute);">
+                                        <?= number_format($row['next_service']) ?> <span class="text-[11px] font-normal" style="color: var(--mute-soft);">KM</span>
+                                    </td>
+                                    <td class="px-6 py-3.5">
+                                        <div class="flex items-center gap-3">
+                                            <div class="meter-bar w-32">
+                                                <div class="meter-fill h-full" style="width: <?= $row['tires_health'] ?>%; background: <?= $tireColor ?>;"></div>
+                                            </div>
+                                            <span class="num text-[12.5px] font-medium" style="color: <?= $tireColor ?>;"><?= $row['tires_health'] ?>%</span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5">
+                                        <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
+                                            <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
+                                        </span>
+                                    </td>
+                                    <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
+                                        <a href="manual_entry.php?id=<?= urlencode($row['id']) ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">Log Entry</a>
+                                        <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>

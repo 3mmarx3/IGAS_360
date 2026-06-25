@@ -1,9 +1,48 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'vehicles_fleet';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Vehicles Fleet', 'Manual Log Entry'];
 
 $vehicle_id = $_GET['id'] ?? '';
+$error_msg = '';
+
+try {
+    $stmt_vehicles = $pdo->query("SELECT fleet_id, plate_number, make_model FROM vehicles ORDER BY fleet_id ASC");
+    $vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $vehicles = [];
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $fleet_id = $_POST['vehicle_id'] ?? '';
+    $event_type = $_POST['event_type'] ?? '';
+    $event_date = $_POST['event_date'] ?? '';
+    $event_time = $_POST['event_time'] ?? '';
+    $odometer = !empty($_POST['odometer']) ? (int)$_POST['odometer'] : 0;
+    $fuel_liters = !empty($_POST['fuel_liters']) ? (float)$_POST['fuel_liters'] : 0;
+    $event_cost = !empty($_POST['event_cost']) ? (float)$_POST['event_cost'] : 0;
+    $logged_by = trim($_POST['logged_by'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+
+    if (empty($fleet_id) || empty($event_type) || empty($event_date) || empty($event_time) || empty($odometer)) {
+        $error_msg = "Please fill in all required fields.";
+    } else {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO vehicle_logs (fleet_id, event_type, event_date, event_time, odometer, fuel_liters, event_cost, logged_by, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([$fleet_id, $event_type, $event_date, $event_time, $odometer, $fuel_liters, $event_cost, $logged_by, $description]);
+            
+            header("Location: vehicles_fleet.php");
+            exit;
+        } catch (PDOException $e) {
+            $error_msg = "Error saving log entry: " . $e->getMessage();
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -102,7 +141,13 @@ $vehicle_id = $_GET['id'] ?? '';
                     <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Manually record fleet events, fuel logs, dispatch movements, or workshop maintenance criteria.</p>
                 </div>
 
-                <form action="vehicles_fleet.php" method="POST" class="card rounded-md flex flex-col overflow-hidden">
+                <?php if ($error_msg): ?>
+                    <div class="mb-5 p-3 rounded-sm text-[13px] font-medium" style="background: #F8E9E7; color: #963B33; border: 1px solid #963B33;">
+                        <?= htmlspecialchars($error_msg) ?>
+                    </div>
+                <?php endif; ?>
+
+                <form action="" method="POST" class="card rounded-md flex flex-col overflow-hidden">
                     <div class="p-8">
                         <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
                             <i data-lucide="clipboard-list" class="w-4 h-4" style="color: var(--mute);"></i>Log Context
@@ -113,11 +158,11 @@ $vehicle_id = $_GET['id'] ?? '';
                                 <label class="form-label">Target Vehicle</label>
                                 <select class="form-select mono" name="vehicle_id" required>
                                     <option value="" disabled <?= empty($vehicle_id) ? 'selected' : '' ?>>Select vehicle asset ID...</option>
-                                    <option value="FLT-001" <?= $vehicle_id === 'FLT-001' ? 'selected' : '' ?>>FLT-001 (Mercedes Actros — T S A 1234)</option>
-                                    <option value="FLT-002" <?= $vehicle_id === 'FLT-002' ? 'selected' : '' ?>>FLT-002 (Isuzu NPR — R N B 9876)</option>
-                                    <option value="FLT-003" <?= $vehicle_id === 'FLT-003' ? 'selected' : '' ?>>FLT-003 (Hino 500 — K L M 4567)</option>
-                                    <option value="FLT-004" <?= $vehicle_id === 'FLT-004' ? 'selected' : '' ?>>FLT-004 (Isuzu NPR — J H G 3321)</option>
-                                    <option value="FLT-005" <?= $vehicle_id === 'FLT-005' ? 'selected' : '' ?>>FLT-005 (Volvo FH16 — P Q R 8855)</option>
+                                    <?php foreach ($vehicles as $v): ?>
+                                        <option value="<?= htmlspecialchars($v['fleet_id']) ?>" <?= $vehicle_id === $v['fleet_id'] ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($v['fleet_id']) ?> (<?= htmlspecialchars($v['make_model']) ?> — <?= htmlspecialchars($v['plate_number']) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                             <div>
@@ -158,14 +203,14 @@ $vehicle_id = $_GET['id'] ?? '';
                             <div>
                                 <label class="form-label">Fuel Added (If Refuel)</label>
                                 <div class="input-group">
-                                    <input type="number" class="form-input has-suffix mono num" placeholder="0.00" name="fuel_liters">
+                                    <input type="number" step="0.01" class="form-input has-suffix mono num" placeholder="0.00" name="fuel_liters">
                                     <span class="input-suffix">LTR</span>
                                 </div>
                             </div>
                             <div>
                                 <label class="form-label">Associated Cost (SAR)</label>
                                 <div class="input-group">
-                                    <input type="number" class="form-input has-suffix mono num" placeholder="0.00" name="event_cost">
+                                    <input type="number" step="0.01" class="form-input has-suffix mono num" placeholder="0.00" name="event_cost">
                                     <span class="input-suffix">SAR</span>
                                 </div>
                             </div>
@@ -180,11 +225,11 @@ $vehicle_id = $_GET['id'] ?? '';
                         <div class="grid grid-cols-1 gap-6">
                             <div>
                                 <label class="form-label">Logged By / Authority Sign-off</label>
-                                <input type="text" class="form-input" placeholder="e.g. Gate Security, Workshop Supervisor, Ahmed Ali">
+                                <input type="text" name="logged_by" class="form-input" placeholder="e.g. Gate Security, Workshop Supervisor, Ahmed Ali">
                             </div>
                             <div>
                                 <label class="form-label">Log Description &amp; Dynamic Details</label>
-                                <textarea class="form-input" rows="4" placeholder="Provide contextual description of the route, refuel voucher numbers, replacement item metrics, or workshop diagnostics criteria..."></textarea>
+                                <textarea name="description" class="form-input" rows="4" placeholder="Provide contextual description of the route, refuel voucher numbers, replacement item metrics, or workshop diagnostics criteria..."></textarea>
                             </div>
                         </div>
                     </div>

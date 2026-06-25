@@ -1,41 +1,107 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'maintenance_fuel';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Maintenance & Fuel', 'Ticket Details'];
 
-$ticket_id = $_GET['id'] ?? 'MNT-4021';
+$ticket_id = $_GET['id'] ?? '';
 
-// Mock data for the specific ticket
+if (isset($_GET['action']) && $_GET['action'] === 'complete' && !empty($ticket_id)) {
+    $stmt_get_v = $pdo->prepare("SELECT vehicle_id FROM maintenance_tickets WHERE ticket_id = ? OR id = ?");
+    $stmt_get_v->execute([$ticket_id, $ticket_id]);
+    $v_id = $stmt_get_v->fetchColumn();
+
+    if ($v_id) {
+        $upd_t = $pdo->prepare("UPDATE maintenance_tickets SET status = 'completed' WHERE ticket_id = ? OR id = ?");
+        $upd_t->execute([$ticket_id, $ticket_id]);
+
+        $upd_v = $pdo->prepare("UPDATE vehicles SET status = 'available' WHERE fleet_id = ?");
+        $upd_v->execute([$v_id]);
+    }
+    
+    header("Location: maintenance_details.php?id=" . urlencode($ticket_id));
+    exit;
+}
+
+$stmt = $pdo->prepare("
+    SELECT 
+        m.ticket_id as id,
+        m.vehicle_id,
+        v.make_model as vehicle_model,
+        v.plate_number as plate,
+        m.odometer,
+        m.service_type as type,
+        m.status,
+        m.scheduled_date as date,
+        m.workshop,
+        m.estimated_cost as total_cost,
+        m.instructions as notes
+    FROM maintenance_tickets m
+    LEFT JOIN vehicles v ON m.vehicle_id = v.fleet_id
+    WHERE m.ticket_id = ? OR m.id = ?
+");
+$stmt->execute([$ticket_id, $ticket_id]);
+$db_ticket = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$db_ticket) {
+    header("Location: maintenance_fuel.php");
+    exit;
+}
+
+$status = $db_ticket['status'];
+if (in_array($status, ['scheduled', 'in_progress']) && strtotime($db_ticket['date']) < strtotime(date('Y-m-d'))) {
+    $status = 'overdue';
+}
+if ($status === 'cancelled') {
+    $status = 'overdue';
+}
+
+$typeMap = [
+    'preventive' => 'Preventive Maintenance (PM)',
+    'repair'     => 'Corrective Repair',
+    'inspection' => 'Safety / DOT Inspection',
+    'tires'      => 'Tire Replacement & Alignment',
+    'oil'        => 'Oil & Fluid Change'
+];
+
+$total_cost = (float)$db_ticket['total_cost'];
+$parts_cost = $total_cost * 0.65;
+$labor_cost = $total_cost * 0.35;
+
 $ticket = [
-    'id'            => $ticket_id,
-    'vehicle_id'    => 'FLT-001',
-    'vehicle_model' => 'Mercedes Actros',
-    'plate'         => 'T S A 1234',
-    'odometer'      => '142,500',
-    'type'          => 'Preventive Maintenance',
-    'status'        => 'in_progress',
-    'date'          => '2026-06-22',
-    'workshop'      => 'Jeddah Main Garage (Internal)',
-    'mechanic'      => 'Tariq Hassan',
-    'total_cost'    => '1,250.00',
-    'parts_cost'    => '850.00',
-    'labor_cost'    => '400.00',
-    'notes'         => 'Perform standard 10,000 KM preventive maintenance. Check cryogenic valve seals, inspect braking system, and replace primary fuel filter.'
+    'id'            => $db_ticket['id'],
+    'vehicle_id'    => $db_ticket['vehicle_id'],
+    'vehicle_model' => $db_ticket['vehicle_model'] ?: 'Unknown Model',
+    'plate'         => $db_ticket['plate'] ?: '---',
+    'odometer'      => number_format($db_ticket['odometer']),
+    'type'          => $typeMap[$db_ticket['type']] ?? ucfirst($db_ticket['type']),
+    'status'        => $status,
+    'date'          => $db_ticket['date'],
+    'workshop'      => $db_ticket['workshop'],
+    'mechanic'      => 'Assigned by Workshop',
+    'total_cost'    => number_format($total_cost, 2),
+    'parts_cost'    => number_format($parts_cost, 2),
+    'labor_cost'    => number_format($labor_cost, 2),
+    'notes'         => $db_ticket['notes'] ?: 'No specific instructions provided.'
 ];
 
 $tasks = [
-    ['task' => 'Engine oil and filter replacement', 'status' => 'done'],
-    ['task' => 'Cryogenic valve seal inspection', 'status' => 'done'],
-    ['task' => 'Brake pad thickness measurement', 'status' => 'pending'],
-    ['task' => 'Primary fuel filter replacement', 'status' => 'pending'],
-    ['task' => 'Tire pressure & alignment check', 'status' => 'pending'],
+    ['task' => 'Initial vehicle diagnosis & inspection', 'status' => 'done'],
+    ['task' => 'Secure vehicle in workshop bay', 'status' => $ticket['status'] === 'completed' || $ticket['status'] === 'in_progress' ? 'done' : 'pending'],
+    ['task' => 'Perform requested maintenance procedures', 'status' => $ticket['status'] === 'completed' ? 'done' : 'pending'],
+    ['task' => 'Quality assurance and safety check', 'status' => $ticket['status'] === 'completed' ? 'done' : 'pending'],
+    ['task' => 'Finalize job card and release asset', 'status' => $ticket['status'] === 'completed' ? 'done' : 'pending'],
 ];
+
+$completed_tasks = count(array_filter($tasks, fn($t) => $t['status'] === 'done'));
+$total_tasks = count($tasks);
 
 $statusStyles = [
     'scheduled'   => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'Scheduled'],
     'in_progress' => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'In Workshop'],
     'completed'   => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Completed'],
-    'overdue'     => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Overdue'],
+    'overdue'     => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Overdue / Cancelled'],
 ];
 
 $ts = $statusStyles[$ticket['status']] ?? $statusStyles['scheduled'];
@@ -148,9 +214,9 @@ $ts = $statusStyles[$ticket['status']] ?? $statusStyles['scheduled'];
                         <i data-lucide="printer" class="w-4 h-4"></i>Print Job Card
                     </button>
                     <?php if($ticket['status'] !== 'completed'): ?>
-                    <button class="btn-success px-4 py-2.5 rounded-sm text-[13.5px] flex items-center gap-2">
+                    <a href="?id=<?= urlencode($ticket['id']) ?>&action=complete" class="btn-success px-4 py-2.5 rounded-sm text-[13.5px] flex items-center gap-2">
                         <i data-lucide="check-circle" class="w-4 h-4"></i>Mark as Completed
-                    </button>
+                    </a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -196,7 +262,7 @@ $ts = $statusStyles[$ticket['status']] ?? $statusStyles['scheduled'];
                                 <p class="info-label">Fleet Unit</p>
                                 <p class="info-value"><?= htmlspecialchars($ticket['vehicle_model']) ?></p>
                                 <p class="text-[12px] mono mt-1" style="color: var(--mute);"><?= htmlspecialchars($ticket['vehicle_id']) ?> — <?= htmlspecialchars($ticket['plate']) ?></p>
-                                <a href="vehicle_logs.php?id=<?= $ticket['vehicle_id'] ?>" class="text-[11px] font-medium underline mt-2 inline-block" style="color: var(--ink);">View Vehicle Profile</a>
+                                <a href="vehicle_logs.php?id=<?= urlencode($ticket['vehicle_id']) ?>" class="text-[11px] font-medium underline mt-2 inline-block" style="color: var(--ink);">View Vehicle Logs</a>
                             </div>
 
                             <div class="info-group mb-0 mt-6 pt-6 border-t" style="border-color: var(--line-soft);">
@@ -237,7 +303,7 @@ $ts = $statusStyles[$ticket['status']] ?? $statusStyles['scheduled'];
                             <h3 class="text-[15px] font-semibold tracking-tight flex items-center gap-2" style="color: var(--ink);">
                                 <i data-lucide="check-square" class="w-4 h-4" style="color: var(--mute);"></i>Task Checklist
                             </h3>
-                            <span class="text-[11px] font-medium" style="color: var(--mute);">2/5 Done</span>
+                            <span class="text-[11px] font-medium" style="color: var(--mute);"><?= $completed_tasks ?>/<?= $total_tasks ?> Done</span>
                         </div>
                         
                         <div class="flex flex-col">

@@ -1,27 +1,71 @@
 <?php
+require_once '../../config/db.php';
+
 $active_page = 'dispatch_delivery';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Dispatch & Delivery'];
 
-$dispatches = [
-    ['id' => 'DSP-901', 'order_ref' => 'ORD-7742', 'client' => 'SABIC Petrochemicals', 'destination' => 'Jubail Industrial 2', 'vehicle' => 'FLT-001', 'driver' => 'Ahmed Ali', 'status' => 'transit', 'eta' => '16:45'],
-    ['id' => 'DSP-902', 'order_ref' => 'ORD-7690', 'client' => 'Air Product Co.', 'destination' => 'Jeddah South Plant', 'vehicle' => 'FLT-003', 'driver' => 'Faisal Omar', 'status' => 'loading', 'eta' => '18:30'],
-    ['id' => 'DSP-903', 'order_ref' => 'ORD-7654', 'client' => 'Red Sea Marine Services', 'destination' => 'Yanbu Port Gate 4', 'vehicle' => 'FLT-005', 'driver' => 'Sayed Mahmoud', 'status' => 'transit', 'eta' => '15:20'],
-    ['id' => 'DSP-904', 'order_ref' => 'ORD-7588', 'client' => 'Tabuk Steel Works', 'destination' => 'Tabuk Industrial Zone', 'vehicle' => 'FLT-002', 'driver' => 'Mohammed Saad', 'status' => 'delivered', 'eta' => '11:10'],
-    ['id' => 'DSP-905', 'order_ref' => 'ORD-7521', 'client' => 'National Contracting', 'destination' => 'Riyadh Site B', 'vehicle' => 'FLT-007', 'driver' => 'Yasser Abdullah', 'status' => 'delayed', 'eta' => '19:15'],
-    ['id' => 'DSP-906', 'order_ref' => 'ORD-7460', 'client' => 'Yanbu Fabrication LLC', 'destination' => 'Yanbu Phase 2', 'vehicle' => 'FLT-006', 'driver' => 'Khalid Hassan', 'status' => 'delivered', 'eta' => '09:45']
-];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $manifest_id_to_delete = $_POST['manifest_id'] ?? null;
 
-$total_dispatches = 1842;
-$active_routes    = 14;
-$delivered_today  = 26;
-$on_time_rate     = 98.2;
+    if ($manifest_id_to_delete !== null) {
+        $stmt_delete = $pdo->prepare("DELETE FROM dispatches WHERE manifest_id = ?");
+        $stmt_delete->execute([$manifest_id_to_delete]);
+    }
+
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit;
+}
+
+$stmt_total = $pdo->query("SELECT COUNT(*) FROM dispatches");
+$total_dispatches = $stmt_total->fetchColumn();
+
+$stmt_active = $pdo->query("SELECT COUNT(*) FROM dispatches WHERE status IN ('dispatched', 'in_transit')");
+$active_routes = $stmt_active->fetchColumn();
+
+$stmt_del_today = $pdo->query("SELECT COUNT(*) FROM dispatches WHERE status = 'delivered' AND dispatch_date = CURDATE()");
+$delivered_today = $stmt_del_today->fetchColumn();
+
+$stmt_loading = $pdo->query("SELECT COUNT(*) FROM dispatches WHERE status = 'dispatched'");
+$loading_count = $stmt_loading->fetchColumn();
+
+$stmt_transit = $pdo->query("SELECT COUNT(*) FROM dispatches WHERE status = 'in_transit'");
+$transit_count = $stmt_transit->fetchColumn();
+
+$stmt_delayed = $pdo->query("SELECT COUNT(*) FROM dispatches WHERE status = 'cancelled'"); 
+$delayed_count = $stmt_delayed->fetchColumn();
+
+$stmt_rate = $pdo->query("SELECT status, COUNT(*) as cnt FROM dispatches WHERE status IN ('delivered', 'cancelled') GROUP BY status");
+$rate_data = $stmt_rate->fetchAll(PDO::FETCH_KEY_PAIR);
+$delivered_count = $rate_data['delivered'] ?? 0;
+$cancelled_count = $rate_data['cancelled'] ?? 0;
+$total_completed = $delivered_count + $cancelled_count;
+$on_time_rate = $total_completed > 0 ? round(($delivered_count / $total_completed) * 100, 1) : 100;
+
+$query = "
+    SELECT 
+        d.manifest_id as id,
+        d.order_ref,
+        d.destination,
+        d.vehicle_id as vehicle,
+        d.eta_time as eta,
+        d.status,
+        dr.full_name as driver,
+        p.company_name as client
+    FROM dispatches d
+    LEFT JOIN drivers dr ON d.driver_id = dr.driver_id
+    LEFT JOIN purchase_orders po ON d.order_ref = po.order_number
+    LEFT JOIN partners p ON po.client_id = p.id
+    ORDER BY d.created_at DESC
+";
+$stmt_dispatches = $pdo->query($query);
+$dispatches = $stmt_dispatches->fetchAll(PDO::FETCH_ASSOC);
 
 $statusStyles = [
-    'loading'   => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Loading'],
-    'transit'   => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'In Transit'],
-    'delivered' => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Delivered'],
-    'delayed'   => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Delayed'],
+    'dispatched' => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Loading'],
+    'in_transit' => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'In Transit'],
+    'delivered'  => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Delivered'],
+    'cancelled'  => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Delayed'],
 ];
 ?>
 <!DOCTYPE html>
@@ -78,11 +122,11 @@ $statusStyles = [
 
         .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
+        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
         .btn-primary:hover { background: var(--ink-soft); }
         .btn-secondary {
             background: var(--paper); color: var(--ink); border: 1px solid var(--line);
-            transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center;
+            transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer;
         }
         .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
 
@@ -112,10 +156,6 @@ $statusStyles = [
         .pill {
             display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500;
             padding: 3px 9px; border-radius: 3px; line-height: 1;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            * { transition: none !important; animation: none !important; }
         }
     </style>
 </head>
@@ -176,7 +216,7 @@ $statusStyles = [
                 </div>
 
                 <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Dispatches (MTD)</p>
+                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Dispatches</p>
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_dispatches) ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
                         <span style="color: var(--mute);">manifests generated</span>
@@ -212,11 +252,10 @@ $statusStyles = [
                         </div>
                     </div>
                     <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">Active Run <span class="num text-[11px]" style="color: var(--mute-soft);">14</span></span>
-                        <span class="tab-item">Loading <span class="num text-[11px]" style="color: var(--mute-soft);">1</span></span>
-                        <span class="tab-item">In Transit <span class="num text-[11px]" style="color: var(--mute-soft);">11</span></span>
-                        <span class="tab-item text-red-700">Delayed <span class="num text-[11px]" style="color: #963B33;">2</span></span>
-                        <span class="tab-item">Archived / Delivered</span>
+                        <span class="tab-item active">Active Run <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $active_routes ?></span></span>
+                        <span class="tab-item">Loading <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $loading_count ?></span></span>
+                        <span class="tab-item">In Transit <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $transit_count ?></span></span>
+                        <span class="tab-item text-red-700">Delayed <span class="num text-[11px]" style="color: #963B33;"><?= $delayed_count ?></span></span>
                     </div>
                 </div>
 
@@ -236,37 +275,57 @@ $statusStyles = [
                             </tr>
                         </thead>
                         <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($dispatches as $d): ?>
-                            <?php
-                                $s = $statusStyles[$d['status']];
-                                $isDelivered = $d['status'] === 'delivered';
-                                $isDelayed = $d['status'] === 'delayed';
-                                $rowColor = $isDelivered ? 'var(--mute-soft)' : 'var(--ink)';
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($d['id']) ?></td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($d['order_ref']) ?></td>
-                                <td class="px-3 py-3.5 font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($d['client']) ?></td>
-                                <td class="px-3 py-3.5 text-[13px]" style="color: <?= $isDelivered ? 'var(--mute-soft)' : 'var(--ink-soft)' ?>;"><?= htmlspecialchars($d['destination']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex flex-col">
-                                        <span class="text-[12px] font-medium mono" style="color: <?= $rowColor ?>;"><i data-lucide="truck" class="w-3 h-3 inline mr-1" style="color: var(--mute);"></i><?= htmlspecialchars($d['vehicle']) ?></span>
-                                        <span class="text-[11px]" style="color: var(--mute);"><?= htmlspecialchars($d['driver']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono font-medium" style="color: <?= $isDelayed ? '#963B33' : ($isDelivered ? 'var(--mute-soft)' : 'var(--ink)') ?>;"><?= htmlspecialchars($d['eta']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
-                                    <a href="dispatch_details.php?id=<?= $d['id'] ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">Track Run</a>
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                            <?php if (empty($dispatches)): ?>
+                            <tr>
+                                <td colspan="9" class="px-6 py-8 text-center text-[13px]" style="color: var(--mute);">
+                                    No dispatches found in the system.
                                 </td>
                             </tr>
-                            <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($dispatches as $d): ?>
+                                <?php
+                                    $raw_status = strtolower($d['status']);
+                                    $s = $statusStyles[$raw_status] ?? $statusStyles['dispatched'];
+                                    $isDelivered = $raw_status === 'delivered';
+                                    $isDelayed = $raw_status === 'cancelled';
+                                    $rowColor = $isDelivered ? 'var(--mute-soft)' : 'var(--ink)';
+                                    $formatted_eta = !empty($d['eta']) ? date('H:i', strtotime($d['eta'])) : '--:--';
+                                ?>
+                                <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                    <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
+                                    <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($d['id']) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($d['order_ref']) ?></td>
+                                    <td class="px-3 py-3.5 font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($d['client'] ?? 'Unknown Client') ?></td>
+                                    <td class="px-3 py-3.5 text-[13px]" style="color: <?= $isDelivered ? 'var(--mute-soft)' : 'var(--ink-soft)' ?>;"><?= htmlspecialchars($d['destination']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <div class="flex flex-col">
+                                            <span class="text-[12px] font-medium mono" style="color: <?= $rowColor ?>;"><i data-lucide="truck" class="w-3 h-3 inline mr-1" style="color: var(--mute);"></i><?= htmlspecialchars($d['vehicle']) ?></span>
+                                            <span class="text-[11px]" style="color: var(--mute);"><?= htmlspecialchars($d['driver'] ?? 'Unassigned') ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono font-medium" style="color: <?= $isDelayed ? '#963B33' : ($isDelivered ? 'var(--mute-soft)' : 'var(--ink)') ?>;"><?= $formatted_eta ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
+                                            <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
+                                        </span>
+                                    </td>
+                                    <td class="pr-6 py-3.5 text-right">
+                                        <div class="flex items-center justify-end gap-4">
+                                            <a href="dispatch_details.php?id=<?= urlencode($d['id']) ?>" class="transition-colors" style="color: var(--mute); text-decoration: none;" title="Track Run" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
+                                                <i data-lucide="eye" class="w-4 h-4"></i>
+                                            </a>
+                                            <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('متأكد إنك عايز تحذف الشحنة دي؟');">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="manifest_id" value="<?= htmlspecialchars($d['id']) ?>">
+                                                <button type="submit" class="transition-colors bg-transparent border-none cursor-pointer flex items-center" style="color: #963B33; padding: 0;" title="Delete Dispatch" onmouseover="this.style.color='#7a2d26'" onmouseout="this.style.color='#963B33'">
+                                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
