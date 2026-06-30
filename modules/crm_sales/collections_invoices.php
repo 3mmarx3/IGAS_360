@@ -1,21 +1,66 @@
 <?php
+session_start();
+require_once '../../config/db.php';
+
 $active_page = 'collections_invoices';
+$base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'CRM & Sales', 'Collections & Invoices'];
 
-$invoices = [
-    ['id' => 'INV-9021', 'client' => 'SABIC Petrochemicals',   'initials' => 'SP', 'corp' => true,  'po_ref' => 'PO-8842', 'issue_date' => '2026-06-20', 'due_date' => '2026-07-20', 'amount' => 45000, 'status' => 'pending'],
-    ['id' => 'INV-9020', 'client' => 'Air Product Co.',        'initials' => 'AP', 'corp' => true,  'po_ref' => 'PO-8841', 'issue_date' => '2026-06-15', 'due_date' => '2026-06-30', 'amount' => 18400, 'status' => 'paid'],
-    ['id' => 'INV-9019', 'client' => 'Red Sea Marine Services','initials' => 'RM', 'corp' => true,  'po_ref' => 'PO-8840', 'issue_date' => '2026-06-10', 'due_date' => '2026-06-25', 'amount' => 27600, 'status' => 'partial'],
-    ['id' => 'INV-9018', 'client' => 'Tabuk Steel Works',      'initials' => 'TS', 'corp' => true,  'po_ref' => 'PO-8839', 'issue_date' => '2026-05-20', 'due_date' => '2026-06-05', 'amount' => 21300, 'status' => 'overdue'],
-    ['id' => 'INV-9017', 'client' => 'National Contracting',   'initials' => 'NC', 'corp' => true,  'po_ref' => 'PO-8838', 'issue_date' => '2026-05-18', 'due_date' => '2026-06-02', 'amount' => 11000, 'status' => 'overdue'],
-    ['id' => 'INV-9016', 'client' => 'Abdullah Al-Hashim',     'initials' => 'AH', 'corp' => false, 'po_ref' => 'PO-8837', 'issue_date' => '2026-06-12', 'due_date' => '2026-06-27', 'amount' => 7250,  'status' => 'paid'],
-    ['id' => 'INV-9015', 'client' => 'Yanbu Fabrication LLC',  'initials' => 'YF', 'corp' => true,  'po_ref' => 'PO-8836', 'issue_date' => '2026-06-01', 'due_date' => '2026-06-15', 'amount' => 9800,  'status' => 'paid'],
-];
+$stmt = $pdo->prepare("
+    SELECT 
+        i.invoice_number as invoice_id, 
+        p.company_name as client_name, 
+        p.entity_type, 
+        i.po_reference as po_ref, 
+        i.issue_date, 
+        i.due_date, 
+        i.amount, 
+        i.status 
+    FROM invoices i 
+    JOIN partners p ON i.client_id = p.id 
+    ORDER BY i.issue_date DESC
+");
+$stmt->execute();
+$records = $stmt->fetchAll();
 
-$total_receivables = 342500;
-$overdue_amount    = 32300;
-$collected_mtd     = 185400;
-$collection_rate   = 78.5;
+$invoices = [];
+$total_receivables = 0;
+$overdue_amount = 0;
+$collected_mtd = 0;
+
+foreach ($records as $row) {
+    $words = explode(' ', trim($row['client_name']));
+    $initials = '';
+    if (count($words) >= 2) {
+        $initials = strtoupper(mb_substr($words[0], 0, 1) . mb_substr($words[1], 0, 1));
+    } elseif (count($words) == 1 && mb_strlen($words[0]) > 0) {
+        $initials = strtoupper(mb_substr($words[0], 0, 2));
+    }
+    
+    if ($row['status'] == 'paid') {
+        $collected_mtd += $row['amount'];
+    } elseif ($row['status'] == 'overdue') {
+        $overdue_amount += $row['amount'];
+        $total_receivables += $row['amount'];
+    } else {
+        $total_receivables += $row['amount'];
+    }
+
+    $invoices[] = [
+        'id' => $row['invoice_id'],
+        'client' => $row['client_name'],
+        'initials' => $initials ?: 'CL',
+        'corp' => ($row['entity_type'] == 'Corporate'),
+        'po_ref' => $row['po_ref'],
+        'issue_date' => $row['issue_date'],
+        'due_date' => $row['due_date'],
+        'amount' => $row['amount'],
+        'status' => $row['status']
+    ];
+}
+
+$total_expected = $collected_mtd + $total_receivables;
+$collection_rate = $total_expected > 0 ? round(($collected_mtd / $total_expected) * 100, 1) : 0;
 
 $statusStyles = [
     'paid'    => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Paid in Full', 'dotBorder' => ''],
@@ -213,10 +258,7 @@ $statusStyles = [
                         </div>
                     </div>
                     <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">All <span class="num text-[11px]" style="color: var(--mute-soft);">1,402</span></span>
-                        <span class="tab-item">Pending <span class="num text-[11px]" style="color: var(--mute-soft);">45</span></span>
-                        <span class="tab-item text-red-700">Overdue <span class="num text-[11px]" style="color: #963B33;">12</span></span>
-                        <span class="tab-item">Paid <span class="num text-[11px]" style="color: var(--mute-soft);">1,345</span></span>
+                        <span class="tab-item active">All <span class="num text-[11px]" style="color: var(--mute-soft);"><?= count($invoices) ?></span></span>
                     </div>
                 </div>
 
@@ -271,12 +313,17 @@ $statusStyles = [
                                 </td>
                             </tr>
                             <?php endforeach; ?>
+                            <?php if(empty($invoices)): ?>
+                            <tr>
+                                <td colspan="9" class="text-center py-6 text-sm text-gray-500">لا توجد فواتير مسجلة حالياً.</td>
+                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($invoices) ?> of 1,402</span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($invoices) > 0 ? '1' : '0' ?>–<?= count($invoices) ?> of <?= count($invoices) ?></span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>

@@ -1,22 +1,62 @@
 <?php
+session_start();
+require_once '../../config/db.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $delete_id = $_POST['quotation_id'];
+    $stmt_del = $pdo->prepare("DELETE FROM quotations WHERE id = ?");
+    $stmt_del->execute([$delete_id]);
+    header("Location: quotations.php");
+    exit;
+}
+
 $active_page = 'quotations';
 $breadcrumb  = ['I-GAS', 'Sales & Quotations', 'All Quotations'];
 
-$quotes = [
-    ['id' => 'QT-2291', 'client' => 'SABIC Petrochemicals',   'initials' => 'SP', 'corp' => true,  'specs' => 'LIQ. O₂ / 20T',     'created' => '2026-06-19', 'expires' => '2026-07-03', 'value' => 45000, 'status' => 'sent'],
-    ['id' => 'QT-2290', 'client' => 'Air Product Co.',        'initials' => 'AP', 'corp' => true,  'specs' => 'C₂H₂ 40L / ×200',   'created' => '2026-06-18', 'expires' => '2026-07-02', 'value' => 18400, 'status' => 'accepted'],
-    ['id' => 'QT-2289', 'client' => 'Red Sea Marine Services','initials' => 'RM', 'corp' => true,  'specs' => 'LIQ. N₂ / 12T',     'created' => '2026-06-17', 'expires' => '2026-07-01', 'value' => 27600, 'status' => 'sent'],
-    ['id' => 'QT-2288', 'client' => 'Tabuk Steel Works',      'initials' => 'TS', 'corp' => true,  'specs' => 'AR 50L / ×140',     'created' => '2026-06-15', 'expires' => '2026-06-29', 'value' => 21300, 'status' => 'draft'],
-    ['id' => 'QT-2287', 'client' => 'National Contracting',   'initials' => 'NC', 'corp' => true,  'specs' => 'MIXED / ×120',      'created' => '2026-06-12', 'expires' => '2026-06-26', 'value' => 11000, 'status' => 'expired'],
-    ['id' => 'QT-2286', 'client' => 'Abdullah Al-Hashim',     'initials' => 'AH', 'corp' => false, 'specs' => 'AR 50L / ×50',      'created' => '2026-06-10', 'expires' => '2026-06-24', 'value' => 7250,  'status' => 'accepted'],
-    ['id' => 'QT-2285', 'client' => 'Yanbu Fabrication LLC',  'initials' => 'YF', 'corp' => true,  'specs' => 'C₂H₂ 40L / ×60',    'created' => '2026-06-08', 'expires' => '2026-06-22', 'value' => 9800,  'status' => 'declined'],
-];
+$stmt = $pdo->query("
+    SELECT q.*, p.company_name, p.entity_type 
+    FROM quotations q 
+    LEFT JOIN partners p ON q.client_id = p.id 
+    ORDER BY q.created_at DESC
+");
+$records = $stmt->fetchAll();
 
-$total_quotes  = 7;
-$pending_count = 2;
-$accepted_count = 2;
-$conversion_rate = 42.8;
-$pipeline_value  = 140350;
+$quotes = [];
+$total_quotes = count($records);
+$pending_count = 0;
+$accepted_count = 0;
+$pipeline_value = 0;
+
+foreach ($records as $row) {
+    if ($row['status'] === 'sent') $pending_count++;
+    if ($row['status'] === 'accepted') $accepted_count++;
+    if (in_array($row['status'], ['draft', 'sent'])) {
+        $pipeline_value += $row['total_value'];
+    }
+
+    $words = explode(' ', trim($row['company_name'] ?? ''));
+    $initials = '';
+    if (count($words) >= 2) {
+        $initials = strtoupper(mb_substr($words[0], 0, 1) . mb_substr($words[1], 0, 1));
+    } elseif (count($words) == 1 && mb_strlen($words[0]) > 0) {
+        $initials = strtoupper(mb_substr($words[0], 0, 2));
+    }
+
+    $quotes[] = [
+        'db_id'    => $row['id'],
+        'id'       => $row['quotation_number'],
+        'client'   => $row['company_name'] ?? 'Unknown',
+        'initials' => $initials,
+        'corp'     => (($row['entity_type'] ?? '') === 'Corporate'),
+        'specs'    => $row['specs'] ?? 'Standard',
+        'created'  => $row['issue_date'],
+        'expires'  => $row['expiry_date'],
+        'value'    => $row['total_value'],
+        'status'   => $row['status']
+    ];
+}
+
+$conversion_rate = $total_quotes > 0 ? round(($accepted_count / $total_quotes) * 100, 1) : 0;
 
 $statusStyles = [
     'draft'    => ['bg' => 'transparent', 'fg' => '#A6A39D', 'dot' => 'transparent', 'label' => 'Draft', 'dotBorder' => 'border:1px solid var(--mute-soft);'],
@@ -74,15 +114,8 @@ $statusStyles = [
         .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
         .nav-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
-        .card {
-            background: var(--paper);
-            border: 1px solid var(--line-soft);
-        }
-
-        .ticket {
-            background: var(--paper); border: 1px solid var(--line-soft);
-            transition: border-color 0.15s ease, box-shadow 0.15s ease;
-        }
+        .card { background: var(--paper); border: 1px solid var(--line-soft); }
+        .ticket { background: var(--paper); border: 1px solid var(--line-soft); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
         .ticket:hover { border-color: var(--mute-soft); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
         .ticket:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 
@@ -90,10 +123,7 @@ $statusStyles = [
 
         .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; }
         .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary {
-            background: var(--paper); color: var(--ink); border: 1px solid var(--line);
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-        }
+        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; }
         .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
 
         .meter-bar { background: var(--paper-deep); border: 1px solid var(--line-soft); border-radius: 2px; }
@@ -103,39 +133,24 @@ $statusStyles = [
         th, td { vertical-align: middle; }
 
         .tab-item { position: relative; transition: color 0.15s ease; cursor: pointer; padding-bottom: 11px; }
-        .tab-item::after {
-            content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
-            height: 2px; background: transparent; transition: background 0.15s ease;
-        }
+        .tab-item::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; transition: background 0.15s ease; }
         .tab-item.active { color: var(--ink); }
         .tab-item.active::after { background: var(--ink); }
         .tab-item:not(.active) { color: var(--mute); }
         .tab-item:not(.active):hover { color: var(--ink); }
 
-        .avatar-sq {
-            width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-            font-size: 10.5px; font-weight: 600; flex-shrink: 0; border-radius: 3px;
-        }
+        .avatar-sq { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 600; flex-shrink: 0; border-radius: 3px; }
 
-        .checkbox-sq {
-            width: 15px; height: 15px; border: 1.5px solid var(--mute-soft); border-radius: 2px;
-            display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-            cursor: pointer; transition: border-color 0.15s ease;
-        }
+        .checkbox-sq { width: 15px; height: 15px; border: 1.5px solid var(--mute-soft); border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; transition: border-color 0.15s ease; }
         .checkbox-sq:hover { border-color: var(--ink); }
 
         .crumb { color: var(--mute); }
         .crumb-sep { color: var(--mute-soft); }
         .crumb-current { color: var(--ink); font-weight: 500; }
 
-        .pill {
-            display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500;
-            padding: 3px 9px; border-radius: 3px; line-height: 1;
-        }
+        .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 3px; line-height: 1; }
 
-        @media (prefers-reduced-motion: reduce) {
-            * { transition: none !important; animation: none !important; }
-        }
+        @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden antialiased">
@@ -169,9 +184,9 @@ $statusStyles = [
                     <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
                         <i data-lucide="download" class="w-4 h-4"></i>Export
                     </button>
-               <a href="new_quotation.php" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-    <i data-lucide="plus" class="w-4 h-4"></i>New Quotation
-</a>
+                    <a href="new_quotation.php" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i>New Quotation
+                    </a>
                 </div>
             </div>
 
@@ -180,7 +195,7 @@ $statusStyles = [
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Quotations</p>
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_quotes) ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
-                        <span class="ml-0" style="color: var(--mute);">this quarter</span>
+                        <span class="ml-0" style="color: var(--mute);">all time</span>
                     </div>
                 </div>
 
@@ -232,12 +247,7 @@ $statusStyles = [
                         </div>
                     </div>
                     <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">All <span class="num text-[11px]" style="color: var(--mute-soft);">7</span></span>
-                        <span class="tab-item">Draft <span class="num text-[11px]" style="color: var(--mute-soft);">1</span></span>
-                        <span class="tab-item">Sent <span class="num text-[11px]" style="color: var(--mute-soft);">2</span></span>
-                        <span class="tab-item">Accepted <span class="num text-[11px]" style="color: var(--mute-soft);">2</span></span>
-                        <span class="tab-item">Declined <span class="num text-[11px]" style="color: var(--mute-soft);">1</span></span>
-                        <span class="tab-item">Expired <span class="num text-[11px]" style="color: var(--mute-soft);">1</span></span>
+                        <span class="tab-item active">All <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $total_quotes ?></span></span>
                     </div>
                 </div>
 
@@ -257,44 +267,59 @@ $statusStyles = [
                             </tr>
                         </thead>
                         <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($quotes as $q): ?>
-                            <?php
-                                $s = $statusStyles[$q['status']];
-                                $avatarBg = $q['corp'] ? '#1A1A1A' : '#EFEEEC';
-                                $avatarFg = $q['corp'] ? '#FFFFFF' : '#5C5A56';
-                                $avatarBorder = $q['corp'] ? '' : 'border:1px solid #DEDCD7;';
-                                $isExpired = $q['status'] === 'expired';
-                                $rowColor = $isExpired ? 'var(--mute-soft)' : 'var(--ink)';
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($q['id']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex items-center gap-2.5">
-                                        <span class="avatar-sq" style="background:<?= $avatarBg ?>; color:<?= $avatarFg ?>; <?= $avatarBorder ?>"><?= htmlspecialchars($q['initials']) ?></span>
-                                        <span class="font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($q['client']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: <?= $isExpired ? 'var(--mute-soft)' : 'var(--mute)' ?>;"><?= htmlspecialchars($q['specs']) ?></td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($q['created']))) ?></td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($q['expires']))) ?></td>
-                                <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $rowColor ?>;"><?= number_format($q['value']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $s['dot'] ?>;<?= $s['dotBorder'] ?>"></span><?= $s['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right">
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
-                                </td>
+                            <?php if(empty($quotes)): ?>
+                            <tr>
+                                <td colspan="9" class="text-center py-8 text-[13px]" style="color: var(--mute);">No quotations found.</td>
                             </tr>
-                            <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($quotes as $q): ?>
+                                <?php
+                                    $s = $statusStyles[$q['status']] ?? $statusStyles['draft'];
+                                    $avatarBg = $q['corp'] ? '#1A1A1A' : '#EFEEEC';
+                                    $avatarFg = $q['corp'] ? '#FFFFFF' : '#5C5A56';
+                                    $avatarBorder = $q['corp'] ? '' : 'border:1px solid #DEDCD7;';
+                                    $isExpired = $q['status'] === 'expired';
+                                    $rowColor = $isExpired ? 'var(--mute-soft)' : 'var(--ink)';
+                                ?>
+                                <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                    <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
+                                    <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($q['id']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <div class="flex items-center gap-2.5">
+                                            <span class="avatar-sq" style="background:<?= $avatarBg ?>; color:<?= $avatarFg ?>; <?= $avatarBorder ?>"><?= htmlspecialchars($q['initials']) ?></span>
+                                            <span class="font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($q['client']) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: <?= $isExpired ? 'var(--mute-soft)' : 'var(--mute)' ?>;"><?= htmlspecialchars($q['specs']) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($q['created']))) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($q['expires']))) ?></td>
+                                    <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $rowColor ?>;"><?= number_format($q['value']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
+                                            <span class="status-dot" style="background:<?= $s['dot'] ?>;<?= $s['dotBorder'] ?>"></span><?= $s['label'] ?>
+                                        </span>
+                                    </td>
+                                    <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-4">
+                                        <a href="quotation_details.php?id=<?= urlencode($q['db_id']) ?>" class="transition-colors" style="color: var(--mute); text-decoration: none;" title="View Details" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                        </a>
+                                        <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('Are you sure you want to delete this quotation?');">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="quotation_id" value="<?= htmlspecialchars($q['db_id']) ?>">
+                                            <button type="submit" class="transition-colors bg-transparent border-none cursor-pointer flex items-center" style="color: #963B33; padding: 0;" title="Delete Quotation" onmouseover="this.style.color='#7a2d26'" onmouseout="this.style.color='#963B33'">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($quotes) ?> of <?= number_format($total_quotes) ?></span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($quotes) > 0 ? '1' : '0' ?>–<?= count($quotes) ?> of <?= number_format($total_quotes) ?></span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>

@@ -1,21 +1,78 @@
 <?php
+session_start();
+require_once '../../config/db.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $sku_to_delete = $_POST['sku'] ?? '';
+    if (!empty($sku_to_delete)) {
+        $delStmt = $pdo->prepare("DELETE FROM cylinder_batches WHERE sku = ?");
+        $delStmt->execute([$sku_to_delete]);
+        header("Location: cylinders_inventory.php");
+        exit;
+    }
+}
+
 $active_page = 'cylinders_inventory';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Production', 'Cylinders Inventory'];
 
-$cylinders = [
-    ['sku' => 'CYL-O2-50L', 'gas' => 'Oxygen (O₂)', 'size' => '50L', 'total' => 5400, 'plant' => 1200, 'clients' => 4150, 'maint' => 50, 'status' => 'optimal'],
-    ['sku' => 'CYL-AC-40L', 'gas' => 'Acetylene (C₂H₂)', 'size' => '40L', 'total' => 3200, 'plant' => 800, 'clients' => 2350, 'maint' => 50, 'status' => 'optimal'],
-    ['sku' => 'CYL-AR-50L', 'gas' => 'Argon (Ar)', 'size' => '50L', 'total' => 1800, 'plant' => 300, 'clients' => 1400, 'maint' => 100, 'status' => 'low'],
-    ['sku' => 'CYL-N2-50L', 'gas' => 'Nitrogen (N₂)', 'size' => '50L', 'total' => 2500, 'plant' => 600, 'clients' => 1880, 'maint' => 20, 'status' => 'optimal'],
-    ['sku' => 'CYL-MX-50L', 'gas' => 'Mixed Gas', 'size' => '50L', 'total' => 850, 'plant' => 100, 'clients' => 740, 'maint' => 10, 'status' => 'low'],
-    ['sku' => 'CYL-HE-50L', 'gas' => 'Helium (He)', 'size' => '50L', 'total' => 400, 'plant' => 250, 'clients' => 145, 'maint' => 5, 'status' => 'optimal'],
-];
+$kpiStmt = $pdo->query("
+    SELECT 
+        COUNT(id) AS total_assets,
+        SUM(CASE WHEN status = 'in_plant' THEN 1 ELSE 0 END) AS in_plant,
+        SUM(CASE WHEN status = 'with_client' THEN 1 ELSE 0 END) AS with_clients,
+        SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) AS maintenance
+    FROM cylinders
+");
+$kpiData = $kpiStmt->fetch(PDO::FETCH_ASSOC);
 
-$total_assets = 14150;
-$in_plant     = 3250;
-$with_clients = 10665;
-$maintenance  = 235;
+$total_assets = (int)($kpiData['total_assets'] ?? 0);
+$in_plant     = (int)($kpiData['in_plant'] ?? 0);
+$with_clients = (int)($kpiData['with_clients'] ?? 0);
+$maintenance  = (int)($kpiData['maintenance'] ?? 0);
+
+$in_plant_pct = $total_assets > 0 ? round(($in_plant / $total_assets) * 100) : 0;
+$with_clients_pct = $total_assets > 0 ? round(($with_clients / $total_assets) * 100) : 0;
+
+$cylStmt = $pdo->query("
+    SELECT 
+        cb.sku, 
+        MAX(cb.gas_classification) as gas, 
+        MAX(cb.volume) as size,
+        COUNT(c.id) as total,
+        SUM(CASE WHEN c.status = 'in_plant' THEN 1 ELSE 0 END) as plant,
+        SUM(CASE WHEN c.status = 'with_client' THEN 1 ELSE 0 END) as clients,
+        SUM(CASE WHEN c.status = 'maintenance' THEN 1 ELSE 0 END) as maint
+    FROM cylinder_batches cb
+    LEFT JOIN cylinders c ON cb.id = c.batch_id
+    GROUP BY cb.sku
+    ORDER BY total DESC
+");
+$cylinders_data = $cylStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$cylinders = [];
+foreach ($cylinders_data as $row) {
+    $plant = (int)$row['plant'];
+    $total = (int)$row['total'];
+    
+    $status = 'optimal';
+    if ($total > 0 && ($plant / $total) <= 0.20) {
+        $status = 'low';
+    } elseif ($plant == 0 && $total > 0) {
+        $status = 'low';
+    }
+    
+    $cylinders[] = [
+        'sku'     => $row['sku'],
+        'gas'     => $row['gas'],
+        'size'    => $row['size'],
+        'total'   => $total,
+        'plant'   => $plant,
+        'clients' => (int)$row['clients'],
+        'maint'   => (int)$row['maint'],
+        'status'  => $status
+    ];
+}
 
 $statusStyles = [
     'optimal' => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Healthy'],
@@ -32,7 +89,7 @@ $statusStyles = [
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
-<link rel="stylesheet" href="../../assets/css/main.css">
+    <link rel="stylesheet" href="../../assets/css/main.css">
 </head>
 <body class="flex h-screen overflow-hidden antialiased">
 
@@ -84,7 +141,7 @@ $statusStyles = [
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($in_plant) ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
                         <span class="pill" style="background: #EAF1E7; color: #45663F;">
-                            <i data-lucide="warehouse" class="w-3 h-3"></i>23% of total inventory
+                            <i data-lucide="warehouse" class="w-3 h-3"></i><?= $in_plant_pct ?>% of total inventory
                         </span>
                     </div>
                 </div>
@@ -94,7 +151,7 @@ $statusStyles = [
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($with_clients) ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
                         <span class="pill" style="background: #E8F1F5; color: #2A6B8A;">
-                            <i data-lucide="users" class="w-3 h-3"></i>75% of total inventory
+                            <i data-lucide="users" class="w-3 h-3"></i><?= $with_clients_pct ?>% of total inventory
                         </span>
                     </div>
                 </div>
@@ -174,9 +231,19 @@ $statusStyles = [
                                         <span class="status-dot" style="background:<?= $statusObj['dot'] ?>;"></span><?= $statusObj['label'] ?>
                                     </span>
                                 </td>
-                                <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
-                                    <a href="cylinder_details.php?sku=<?= $c['sku'] ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">View Logs</a>
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                                <td class="pr-6 py-3.5">
+                                    <div class="flex items-center justify-end gap-4">
+                                        <a href="cylinder_details.php?sku=<?= urlencode($c['sku']) ?>" class="transition-colors" style="color: var(--mute); text-decoration: none;" title="View Details" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                        </a>
+                                        <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('Are you sure you want to delete this cylinder record?');">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="sku" value="<?= htmlspecialchars($c['sku']) ?>">
+                                            <button type="submit" class="transition-colors bg-transparent border-none cursor-pointer flex items-center" style="color: #963B33; padding: 0;" title="Delete Cylinder" onmouseover="this.style.color='#7a2d26'" onmouseout="this.style.color='#963B33'">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                             <?php endforeach; ?>

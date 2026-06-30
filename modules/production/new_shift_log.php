@@ -1,9 +1,52 @@
 <?php
+session_start();
+require_once '../../config/db.php';
+
+$error_message = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $shift_id = $_POST['shift_id'] ?? ('SHF-' . date('md') . '-' . rand(100, 999));
+    $operational_date = $_POST['operational_date'] ?? date('Y-m-d');
+    $shift_cycle = $_POST['shift_cycle'] ?? '';
+    $supervisor = $_POST['supervisor'] ?? '';
+    $operators_count = (int)($_POST['operators_count'] ?? 0);
+    $primary_focus = $_POST['primary_focus'] ?? 'Mixed Production';
+    $target_output = (int)($_POST['target_output'] ?? 0);
+    $notes = $_POST['notes'] ?? '';
+
+    $cryo_checked = isset($_POST['cryo_checked']) ? 1 : 0;
+    $manifolds_checked = isset($_POST['manifolds_checked']) ? 1 : 0;
+    $ventilation_checked = isset($_POST['ventilation_checked']) ? 1 : 0;
+    $ppe_checked = isset($_POST['ppe_checked']) ? 1 : 0;
+
+    if (empty($shift_cycle) || empty($supervisor) || $operators_count <= 0) {
+        $error_message = "يرجى اختيار الوردية، المشرف، وعدد العمال بشكل صحيح.";
+    } else {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO shift_logs 
+                (shift_id, operational_date, shift_cycle, supervisor, operators_count, primary_focus, target_output, notes, cryo_checked, manifolds_checked, ventilation_checked, ppe_checked, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_progress')
+            ");
+            $stmt->execute([
+                $shift_id, $operational_date, $shift_cycle, $supervisor, $operators_count, 
+                $primary_focus, $target_output, $notes, $cryo_checked, $manifolds_checked, 
+                $ventilation_checked, $ppe_checked
+            ]);
+            
+            header("Location: daily_log_shifts.php");
+            exit;
+        } catch (Exception $e) {
+            $error_message = "حدث خطأ أثناء حفظ الوردية: " . $e->getMessage();
+        }
+    }
+}
+
 $active_page = 'daily_log_shifts';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Production', 'Daily Shift Logs', 'New Shift Entry'];
 
-$new_shift_id = 'SHF-' . date('md') . '-N'; 
+$new_shift_id = 'SHF-' . date('md') . '-' . rand(100, 999); 
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -111,13 +154,20 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                     <a href="daily_log_shifts.php" class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
                         Cancel
                     </a>
-                    <button class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
+                    <button type="button" onclick="document.getElementById('shift-form').submit();" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
                         <i data-lucide="play-circle" class="w-4 h-4"></i>Start Operational Shift
                     </button>
                 </div>
             </div>
 
-            <form action="daily_log_shifts.php" method="POST">
+            <?php if (!empty($error_message)): ?>
+            <div class="p-4 mb-6 rounded-md text-[13.5px] font-medium flex items-center gap-2" style="background: #F8E9E7; color: #963B33; border: 1px solid #E7D5D3;">
+                <i data-lucide="alert-circle" class="w-5 h-5 flex-shrink-0"></i> <?= htmlspecialchars($error_message) ?>
+            </div>
+            <?php endif; ?>
+
+            <form action="" method="POST" id="shift-form">
+                <input type="hidden" name="shift_id" value="<?= htmlspecialchars($new_shift_id) ?>">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     
                     <div class="lg:col-span-2 flex flex-col gap-6">
@@ -132,12 +182,12 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                                     <label class="form-label">Operational Date</label>
                                     <div class="input-group">
                                         <i data-lucide="calendar" class="w-4 h-4 input-icon"></i>
-                                        <input type="date" class="form-input has-icon mono num" value="<?= date('Y-m-d') ?>" required>
+                                        <input type="date" name="operational_date" class="form-input has-icon mono num" value="<?= date('Y-m-d') ?>" required>
                                     </div>
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Shift Cycle</label>
-                                    <select class="form-select" required>
+                                    <select name="shift_cycle" class="form-select" required>
                                         <option value="" selected disabled>Select assigned block...</option>
                                         <option value="Morning">Morning (06:00 - 14:00)</option>
                                         <option value="Evening">Evening (14:00 - 22:00)</option>
@@ -146,7 +196,7 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Shift Supervisor / Foreperson</label>
-                                    <select class="form-select" required>
+                                    <select name="supervisor" class="form-select" required>
                                         <option value="" selected disabled>Identify lead...</option>
                                         <option value="Faisal Omar">Faisal Omar</option>
                                         <option value="Tariq Nabil">Tariq Nabil</option>
@@ -156,7 +206,7 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Active Operators (Headcount)</label>
-                                    <input type="number" class="form-input mono num" placeholder="0" min="1" required>
+                                    <input type="number" name="operators_count" class="form-input mono num" placeholder="0" min="1" required>
                                 </div>
                             </div>
                         </div>
@@ -169,7 +219,7 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                             <div class="grid grid-cols-2 gap-5">
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Primary Gas Focus</label>
-                                    <select class="form-select">
+                                    <select name="primary_focus" class="form-select">
                                         <option value="Mixed Production" selected>Mixed Production Lines</option>
                                         <option value="Oxygen">Oxygen (O₂) Focus</option>
                                         <option value="Acetylene">Acetylene (C₂H₂) Focus</option>
@@ -178,11 +228,11 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
                                     <label class="form-label">Target Cylinder Output</label>
-                                    <input type="number" class="form-input mono num" placeholder="Estimated fill count..." min="0">
+                                    <input type="number" name="target_output" class="form-input mono num" placeholder="Estimated fill count..." min="0">
                                 </div>
                                 <div class="col-span-2">
                                     <label class="form-label">Shift Notes &amp; Handover Brief</label>
-                                    <textarea class="form-input" rows="4" placeholder="Log any pending issues from the previous shift, pending maintenance tickets, or special production requests..."></textarea>
+                                    <textarea name="notes" class="form-input" rows="4" placeholder="Log any pending issues from the previous shift, pending maintenance tickets, or special production requests..."></textarea>
                                 </div>
                             </div>
                         </div>
@@ -199,7 +249,7 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                             <div class="flex flex-col gap-5">
                                 <div>
                                     <label class="form-label">Generated Shift ID</label>
-                                    <input type="text" class="form-input readonly mono num" value="<?= $new_shift_id ?>" disabled>
+                                    <input type="text" class="form-input readonly mono num" value="<?= htmlspecialchars($new_shift_id) ?>" disabled>
                                 </div>
                                 <div>
                                     <label class="form-label">Status Context</label>
@@ -217,22 +267,22 @@ $new_shift_id = 'SHF-' . date('md') . '-N';
                             
                             <div class="flex flex-col">
                                 <label class="check-item">
-                                    <input type="checkbox">
+                                    <input type="checkbox" name="cryo_checked" value="1">
                                     <div class="check-box"><i data-lucide="check" class="w-3 h-3"></i></div>
                                     <span class="check-text">Cryogenic tanks pressure verified</span>
                                 </label>
                                 <label class="check-item">
-                                    <input type="checkbox">
+                                    <input type="checkbox" name="manifolds_checked" value="1">
                                     <div class="check-box"><i data-lucide="check" class="w-3 h-3"></i></div>
                                     <span class="check-text">Filling manifolds visually inspected</span>
                                 </label>
                                 <label class="check-item">
-                                    <input type="checkbox">
+                                    <input type="checkbox" name="ventilation_checked" value="1">
                                     <div class="check-box"><i data-lucide="check" class="w-3 h-3"></i></div>
                                     <span class="check-text">Ventilation systems active and nominal</span>
                                 </label>
                                 <label class="check-item">
-                                    <input type="checkbox">
+                                    <input type="checkbox" name="ppe_checked" value="1">
                                     <div class="check-box"><i data-lucide="check" class="w-3 h-3"></i></div>
                                     <span class="check-text">Safety gear (PPE) accounted for</span>
                                 </label>

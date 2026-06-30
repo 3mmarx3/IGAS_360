@@ -47,9 +47,11 @@ $warning_docs  = 0;
 $valid_docs = 0;
 
 $today = new DateTime();
+$today->setTime(0, 0, 0);
 
 foreach ($all_docs as $doc) {
     $exp = new DateTime($doc['expiry']);
+    $exp->setTime(0, 0, 0);
     $diff = $today->diff($exp);
     $days = (int)$diff->format('%R%a');
 

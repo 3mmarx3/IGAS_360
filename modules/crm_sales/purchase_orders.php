@@ -1,28 +1,87 @@
 <?php
+session_start();
+require_once '../../config/db.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $delete_id = $_POST['order_id'];
+    $stmt_del = $pdo->prepare("DELETE FROM purchase_orders WHERE id = ?");
+    $stmt_del->execute([$delete_id]);
+    header("Location: purchase_orders.php");
+    exit;
+}
+
 $active_page = 'purchase_orders';
 $breadcrumb  = ['I-GAS', 'CRM & Sales', 'Purchase Orders'];
 
-$orders = [
-    ['id' => 'PO-8842', 'client' => 'SABIC Petrochemicals',   'initials' => 'SP', 'corp' => true,  'specs' => 'LIQ. O₂ / 20T',     'order_date' => '2026-06-20', 'target_date' => '2026-06-22', 'value' => 45000, 'status' => 'processing'],
-    ['id' => 'PO-8841', 'client' => 'Air Product Co.',        'initials' => 'AP', 'corp' => true,  'specs' => 'C₂H₂ 40L / ×200',   'order_date' => '2026-06-19', 'target_date' => '2026-06-21', 'value' => 18400, 'status' => 'transit'],
-    ['id' => 'PO-8840', 'client' => 'Red Sea Marine Services','initials' => 'RM', 'corp' => true,  'specs' => 'LIQ. N₂ / 12T',     'order_date' => '2026-06-18', 'target_date' => '2026-06-20', 'value' => 27600, 'status' => 'delivered'],
-    ['id' => 'PO-8839', 'client' => 'Tabuk Steel Works',      'initials' => 'TS', 'corp' => true,  'specs' => 'AR 50L / ×140',     'order_date' => '2026-06-15', 'target_date' => '2026-06-18', 'value' => 21300, 'status' => 'delivered'],
-    ['id' => 'PO-8838', 'client' => 'National Contracting',   'initials' => 'NC', 'corp' => true,  'specs' => 'MIXED / ×120',      'order_date' => '2026-06-14', 'target_date' => '2026-06-16', 'value' => 11000, 'status' => 'processing'],
-    ['id' => 'PO-8837', 'client' => 'Abdullah Al-Hashim',     'initials' => 'AH', 'corp' => false, 'specs' => 'AR 50L / ×50',      'order_date' => '2026-06-12', 'target_date' => '2026-06-13', 'value' => 7250,  'status' => 'delivered'],
-    ['id' => 'PO-8836', 'client' => 'Yanbu Fabrication LLC',  'initials' => 'YF', 'corp' => true,  'specs' => 'C₂H₂ 40L / ×60',    'order_date' => '2026-06-11', 'target_date' => '2026-06-14', 'value' => 9800,  'status' => 'on_hold'],
-];
+$stmt = $pdo->query("
+    SELECT po.*, p.company_name, p.entity_type 
+    FROM purchase_orders po 
+    LEFT JOIN partners p ON po.client_id = p.id 
+    ORDER BY po.order_date DESC
+");
+$records = $stmt->fetchAll();
 
-$total_orders  = 124;
-$active_count  = 18;
-$transit_count = 5;
-$fulfillment_rate = 94.2;
-$mtd_volume  = 482500;
+$orders = [];
+$total_orders = count($records);
+$active_count = 0;
+$transit_count = 0;
+$delivered_count = 0;
+$mtd_volume = 0;
+
+$count_processing = 0;
+$count_transit = 0;
+$count_delivered = 0;
+$count_other = 0;
+
+foreach ($records as $row) {
+    if ($row['status'] === 'processing') {
+        $active_count++;
+        $count_processing++;
+    } elseif ($row['status'] === 'in_transit') {
+        $transit_count++;
+        $active_count++;
+        $count_transit++;
+    } elseif ($row['status'] === 'delivered') {
+        $delivered_count++;
+        $count_delivered++;
+    } else {
+        $count_other++;
+    }
+
+    if (in_array($row['status'], ['processing', 'in_transit', 'delivered'])) {
+        $mtd_volume += $row['total_value'];
+    }
+
+    $words = explode(' ', trim($row['company_name'] ?? ''));
+    $initials = '';
+    if (count($words) >= 2) {
+        $initials = strtoupper(mb_substr($words[0], 0, 1) . mb_substr($words[1], 0, 1));
+    } elseif (count($words) == 1 && mb_strlen($words[0]) > 0) {
+        $initials = strtoupper(mb_substr($words[0], 0, 2));
+    }
+
+    $orders[] = [
+        'db_id'       => $row['id'],
+        'id'          => $row['order_number'],
+        'client'      => $row['company_name'] ?? 'Unknown',
+        'initials'    => $initials,
+        'corp'        => (($row['entity_type'] ?? '') === 'Corporate'),
+        'specs'       => $row['specs'] ?? 'Standard',
+        'order_date'  => $row['order_date'],
+        'target_date' => $row['delivery_date'] ?? $row['order_date'],
+        'value'       => $row['total_value'],
+        'status'      => $row['status']
+    ];
+}
+
+$fulfillment_rate = $total_orders > 0 ? round(($delivered_count / $total_orders) * 100, 1) : 0;
 
 $statusStyles = [
+    'draft'      => ['bg' => '#F2F1EF', 'fg' => '#767470', 'dot' => '#A6A39D', 'label' => 'Draft', 'dotBorder' => 'border:1px solid var(--mute-soft);'],
     'processing' => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Processing', 'dotBorder' => ''],
-    'transit'    => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'In Transit', 'dotBorder' => ''],
+    'in_transit' => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A', 'dot' => '#2A6B8A', 'label' => 'In Transit', 'dotBorder' => ''],
     'delivered'  => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Delivered',  'dotBorder' => ''],
-    'on_hold'    => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'On Hold',    'dotBorder' => ''],
+    'cancelled'  => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Cancelled',  'dotBorder' => ''],
 ];
 ?>
 <!DOCTYPE html>
@@ -73,26 +132,13 @@ $statusStyles = [
         .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
         .nav-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
-        .card {
-            background: var(--paper);
-            border: 1px solid var(--line-soft);
-        }
-
-        .ticket {
-            background: var(--paper); border: 1px solid var(--line-soft);
-            transition: border-color 0.15s ease, box-shadow 0.15s ease;
-        }
-        .ticket:hover { border-color: var(--mute-soft); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-        .ticket:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+        .card { background: var(--paper); border: 1px solid var(--line-soft); }
 
         .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
+        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; border: none; }
         .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary {
-            background: var(--paper); color: var(--ink); border: 1px solid var(--line);
-            transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center;
-        }
+        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
         .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
 
         .meter-bar { background: var(--paper-deep); border: 1px solid var(--line-soft); border-radius: 2px; }
@@ -102,39 +148,18 @@ $statusStyles = [
         th, td { vertical-align: middle; }
 
         .tab-item { position: relative; transition: color 0.15s ease; cursor: pointer; padding-bottom: 11px; }
-        .tab-item::after {
-            content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
-            height: 2px; background: transparent; transition: background 0.15s ease;
-        }
+        .tab-item::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; transition: background 0.15s ease; }
         .tab-item.active { color: var(--ink); }
         .tab-item.active::after { background: var(--ink); }
         .tab-item:not(.active) { color: var(--mute); }
         .tab-item:not(.active):hover { color: var(--ink); }
 
-        .avatar-sq {
-            width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-            font-size: 10.5px; font-weight: 600; flex-shrink: 0; border-radius: 3px;
-        }
+        .avatar-sq { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 600; flex-shrink: 0; border-radius: 3px; }
 
-        .checkbox-sq {
-            width: 15px; height: 15px; border: 1.5px solid var(--mute-soft); border-radius: 2px;
-            display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-            cursor: pointer; transition: border-color 0.15s ease;
-        }
+        .checkbox-sq { width: 15px; height: 15px; border: 1.5px solid var(--mute-soft); border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; transition: border-color 0.15s ease; }
         .checkbox-sq:hover { border-color: var(--ink); }
 
-        .crumb { color: var(--mute); }
-        .crumb-sep { color: var(--mute-soft); }
-        .crumb-current { color: var(--ink); font-weight: 500; }
-
-        .pill {
-            display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500;
-            padding: 3px 9px; border-radius: 3px; line-height: 1;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            * { transition: none !important; animation: none !important; }
-        }
+        .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 3px; line-height: 1; }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden antialiased">
@@ -185,7 +210,7 @@ $statusStyles = [
 
                 <div class="card rounded-md p-5">
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Active & In Transit</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($active_count + $transit_count) ?></h3>
+                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($active_count) ?></h3>
                     <div class="mt-3 flex items-center text-[12px]">
                         <span class="pill" style="background: #E8F1F5; color: #2A6B8A;">
                             <i data-lucide="truck" class="w-3 h-3"></i><?= $transit_count ?> in transit
@@ -224,17 +249,17 @@ $statusStyles = [
                                 <option>Processing</option>
                                 <option>In Transit</option>
                                 <option>Delivered</option>
-                                <option>On Hold</option>
+                                <option>On Hold / Draft</option>
                             </select>
                             <button class="flex items-center justify-center w-8 h-8 border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i></button>
                         </div>
                     </div>
                     <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">All <span class="num text-[11px]" style="color: var(--mute-soft);">124</span></span>
-                        <span class="tab-item">Processing <span class="num text-[11px]" style="color: var(--mute-soft);">18</span></span>
-                        <span class="tab-item">In Transit <span class="num text-[11px]" style="color: var(--mute-soft);">5</span></span>
-                        <span class="tab-item">Delivered <span class="num text-[11px]" style="color: var(--mute-soft);">98</span></span>
-                        <span class="tab-item">On Hold <span class="num text-[11px]" style="color: var(--mute-soft);">3</span></span>
+                        <span class="tab-item active">All <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $total_orders ?></span></span>
+                        <span class="tab-item">Processing <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $count_processing ?></span></span>
+                        <span class="tab-item">In Transit <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $count_transit ?></span></span>
+                        <span class="tab-item">Delivered <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $count_delivered ?></span></span>
+                        <span class="tab-item">Other <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $count_other ?></span></span>
                     </div>
                 </div>
 
@@ -254,44 +279,59 @@ $statusStyles = [
                             </tr>
                         </thead>
                         <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($orders as $o): ?>
-                            <?php
-                                $s = $statusStyles[$o['status']];
-                                $avatarBg = $o['corp'] ? '#1A1A1A' : '#EFEEEC';
-                                $avatarFg = $o['corp'] ? '#FFFFFF' : '#5C5A56';
-                                $avatarBorder = $o['corp'] ? '' : 'border:1px solid #DEDCD7;';
-                                $isHold = $o['status'] === 'on_hold';
-                                $rowColor = $isHold ? 'var(--mute-soft)' : 'var(--ink)';
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($o['id']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex items-center gap-2.5">
-                                        <span class="avatar-sq" style="background:<?= $avatarBg ?>; color:<?= $avatarFg ?>; <?= $avatarBorder ?>"><?= htmlspecialchars($o['initials']) ?></span>
-                                        <span class="font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($o['client']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: <?= $isHold ? 'var(--mute-soft)' : 'var(--mute)' ?>;"><?= htmlspecialchars($o['specs']) ?></td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($o['order_date']))) ?></td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($o['target_date']))) ?></td>
-                                <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $rowColor ?>;"><?= number_format($o['value']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $s['dot'] ?>;<?= $s['dotBorder'] ?>"></span><?= $s['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right">
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
-                                </td>
+                            <?php if (empty($orders)): ?>
+                            <tr>
+                                <td colspan="9" class="text-center py-8 text-[13px]" style="color: var(--mute);">No orders found.</td>
                             </tr>
-                            <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($orders as $o): ?>
+                                <?php
+                                    $s = $statusStyles[$o['status']] ?? $statusStyles['draft'];
+                                    $avatarBg = $o['corp'] ? '#1A1A1A' : '#EFEEEC';
+                                    $avatarFg = $o['corp'] ? '#FFFFFF' : '#5C5A56';
+                                    $avatarBorder = $o['corp'] ? '' : 'border:1px solid #DEDCD7;';
+                                    $isHold = in_array($o['status'], ['cancelled', 'draft']);
+                                    $rowColor = $isHold ? 'var(--mute-soft)' : 'var(--ink)';
+                                ?>
+                                <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                    <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
+                                    <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($o['id']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <div class="flex items-center gap-2.5">
+                                            <span class="avatar-sq" style="background:<?= $avatarBg ?>; color:<?= $avatarFg ?>; <?= $avatarBorder ?>"><?= htmlspecialchars($o['initials']) ?></span>
+                                            <span class="font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($o['client']) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: <?= $isHold ? 'var(--mute-soft)' : 'var(--mute)' ?>;"><?= htmlspecialchars($o['specs']) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($o['order_date']))) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('d M Y', strtotime($o['target_date']))) ?></td>
+                                    <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $rowColor ?>;"><?= number_format($o['value']) ?></td>
+                                    <td class="px-3 py-3.5">
+                                        <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
+                                            <span class="status-dot" style="background:<?= $s['dot'] ?>;<?= $s['dotBorder'] ?>"></span><?= $s['label'] ?>
+                                        </span>
+                                    </td>
+                                    <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-4">
+                                        <a href="order_details.php?id=<?= urlencode($o['db_id']) ?>" class="transition-colors" style="color: var(--mute); text-decoration: none;" title="View Details" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                        </a>
+                                        <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('Are you sure you want to delete this order?');">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="order_id" value="<?= htmlspecialchars($o['db_id']) ?>">
+                                            <button type="submit" class="transition-colors bg-transparent border-none cursor-pointer flex items-center" style="color: #963B33; padding: 0;" title="Delete Order" onmouseover="this.style.color='#7a2d26'" onmouseout="this.style.color='#963B33'">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing 1–<?= count($orders) ?> of <?= number_format($total_orders) ?></span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($orders) > 0 ? '1' : '0' ?>–<?= count($orders) ?> of <?= number_format($total_orders) ?></span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>

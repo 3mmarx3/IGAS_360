@@ -1,36 +1,94 @@
 <?php
+session_start();
+require_once '../../config/db.php';
+
 $active_page = 'raw_materials';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Production', 'Raw Materials', 'Material Details'];
 
-$material_id = $_GET['id'] ?? 'RM-1001';
+$material_row_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+if ($material_row_id <= 0) {
+    header('Location: raw_materials.php');
+    exit;
+}
+
+$stmt = $pdo->prepare("
+    SELECT
+        rm.*,
+        p.id AS partner_id,
+        p.reference_id AS supplier_ref,
+        p.company_name AS supplier_name
+    FROM raw_materials rm
+    JOIN partners p ON rm.supplier_id = p.id
+    WHERE rm.id = :id
+    LIMIT 1
+");
+$stmt->execute(['id' => $material_row_id]);
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$row) {
+    header('Location: raw_materials.php');
+    exit;
+}
+
+$currentStock = (float)$row['current_stock'];
+$threshold    = (float)$row['safety_stock_threshold'];
+$maxCapacity  = (float)$row['max_capacity'];
+
+if ($currentStock <= 0) {
+    $statusKey = 'out';
+} elseif ($currentStock <= $threshold) {
+    $statusKey = 'low';
+} else {
+    $statusKey = 'optimal';
+}
+
+$totalValue = $currentStock * (float)$row['unit_cost'];
+
+$leadTimeDisplay = $row['lead_time_days'] !== null
+    ? ((int)$row['lead_time_days'] . ' Day' . ((int)$row['lead_time_days'] === 1 ? '' : 's'))
+    : '—';
 
 $material = [
-    'id' => $material_id,
-    'name' => 'Liquid Oxygen (LOX)',
-    'category' => 'Bulk Gas',
-    'unit' => 'Liters',
-    'stock' => 45000,
-    'capacity' => 60000,
-    'threshold' => 10000,
-    'unit_cost' => 2.50,
-    'total_value' => 112500,
-    'supplier_id' => 'SUP-5001',
-    'supplier_name' => 'Gulf Industrial Gases',
-    'lead_time' => '2 Days',
-    'location' => 'Cryo Tank Farm - Tank A1',
-    'status' => 'optimal',
-    'last_updated' => '2026-06-23 08:15',
-    'avg_consumption' => 1200 
+    'id'            => $row['material_sku'],
+    'name'          => $row['material_name'],
+    'category'      => $row['category'],
+    'unit'          => $row['unit'],
+    'stock'         => $currentStock,
+    'capacity'      => $maxCapacity,
+    'threshold'     => $threshold,
+    'unit_cost'     => (float)$row['unit_cost'],
+    'total_value'   => $totalValue,
+    'supplier_id'   => $row['supplier_ref'],
+    'supplier_db_id'=> $row['partner_id'],
+    'supplier_name' => $row['supplier_name'],
+    'lead_time'     => $leadTimeDisplay,
+    'location'      => $row['warehouse_zone'] ?: '—',
+    'status'        => $statusKey,
+    'last_updated'  => !empty($row['updated_at']) ? date('Y-m-d H:i', strtotime($row['updated_at'])) : '—',
 ];
 
-$transactions = [
-    ['id' => 'TRX-9921', 'date' => '2026-06-23 08:15', 'type' => 'out', 'qty' => 500, 'ref' => 'PRD-Batch-4480', 'user' => 'System'],
-    ['id' => 'TRX-9905', 'date' => '2026-06-22 14:30', 'type' => 'out', 'qty' => 1200, 'ref' => 'PRD-Batch-4479', 'user' => 'Ahmad S.'],
-    ['id' => 'TRX-9882', 'date' => '2026-06-20 09:00', 'type' => 'in', 'qty' => 20000, 'ref' => 'PO-8842', 'user' => 'Receiving Dept'],
-    ['id' => 'TRX-9850', 'date' => '2026-06-19 11:45', 'type' => 'out', 'qty' => 850, 'ref' => 'PRD-Batch-4475', 'user' => 'System'],
-    ['id' => 'TRX-9811', 'date' => '2026-06-18 16:20', 'type' => 'out', 'qty' => 1100, 'ref' => 'PRD-Batch-4471', 'user' => 'Faisal O.'],
-];
+$avgConsumptionStmt = $pdo->prepare("
+    SELECT AVG(quantity) AS avg_qty
+    FROM material_transactions
+    WHERE material_id = :id AND type = 'out'
+        AND transaction_date >= (NOW() - INTERVAL 30 DAY)
+");
+$avgConsumptionStmt->execute(['id' => $material_row_id]);
+$avgRow = $avgConsumptionStmt->fetch(PDO::FETCH_ASSOC);
+$avgConsumption = $avgRow && $avgRow['avg_qty'] !== null ? round((float)$avgRow['avg_qty']) : 0;
+$material['avg_consumption'] = $avgConsumption;
+
+$txStmt = $pdo->prepare("
+    SELECT transaction_ref AS id, transaction_date AS date, type, quantity AS qty, source_ref AS ref, logged_by AS user
+    FROM material_transactions
+    WHERE material_id = :id
+    ORDER BY transaction_date DESC
+    LIMIT 20
+");
+$txStmt->execute(['id' => $material_row_id]);
+$transactions = $txStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $statusStyles = [
     'optimal' => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'In Stock / Optimal'],
@@ -44,7 +102,9 @@ $typeStyles = [
 ];
 
 $ms = $statusStyles[$material['status']];
-$stock_percentage = ($material['stock'] / $material['capacity']) * 100;
+$stock_percentage = $material['capacity'] > 0
+    ? min(100, ($material['stock'] / $material['capacity']) * 100)
+    : 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -154,12 +214,12 @@ $stock_percentage = ($material['stock'] / $material['capacity']) * 100;
                     </div>
                 </div>
                 <div class="flex gap-3">
-                    <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
+                    <a href="adjust_stock.php?id=<?= urlencode($material_row_id) ?>" class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
                         <i data-lucide="arrow-down-to-line" class="w-4 h-4"></i>Adjust Stock
-                    </button>
-                    <button class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
+                    </a>
+                    <a href="new_purchase_order.php?material_id=<?= urlencode($material_row_id) ?>" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
                         <i data-lucide="shopping-cart" class="w-4 h-4"></i>Reorder Material
-                    </button>
+                    </a>
                 </div>
             </div>
 
@@ -195,7 +255,13 @@ $stock_percentage = ($material['stock'] / $material['capacity']) * 100;
                     <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Est. Daily Consumption</p>
                     <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($material['avg_consumption']) ?> <span class="text-[13px] font-normal" style="color: var(--mute);"><?= htmlspecialchars($material['unit']) ?>/d</span></h3>
                     <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);"><?= round($material['stock'] / $material['avg_consumption']) ?> days of stock remaining</span>
+                        <span style="color: var(--mute);">
+                        <?php if ($material['avg_consumption'] > 0): ?>
+                            <?= round($material['stock'] / $material['avg_consumption']) ?> days of stock remaining
+                        <?php else: ?>
+                            No recent consumption data
+                        <?php endif; ?>
+                        </span>
                     </div>
                 </div>
             </div>
@@ -226,14 +292,19 @@ $stock_percentage = ($material['stock'] / $material['capacity']) * 100;
                                 <?php $ts = $typeStyles[$t['type']]; ?>
                                 <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
                                     <td class="pl-6 pr-3 py-3.5 num font-medium" style="color: var(--ink);"><?= htmlspecialchars($t['id']) ?></td>
-                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($t['date']) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars(date('Y-m-d H:i', strtotime($t['date']))) ?></td>
                                     <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $ts['color'] ?>;">
                                         <?= $ts['sign'] ?> <?= number_format($t['qty']) ?>
                                     </td>
-                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--ink);"><?= htmlspecialchars($t['ref']) ?></td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--ink);"><?= htmlspecialchars($t['ref'] ?? '—') ?></td>
                                     <td class="pr-6 py-3.5 text-right font-medium" style="color: var(--mute);"><?= htmlspecialchars($t['user']) ?></td>
                                 </tr>
                                 <?php endforeach; ?>
+                                <?php if (empty($transactions)): ?>
+                                <tr>
+                                    <td colspan="5" class="text-center py-6 text-sm" style="color: var(--mute);">لا توجد حركات مسجلة لهذه المادة حالياً.</td>
+                                </tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -271,7 +342,7 @@ $stock_percentage = ($material['stock'] / $material['capacity']) * 100;
                     <div class="card rounded-md overflow-hidden" style="background: var(--paper-deep);">
                         <div class="px-6 py-5 border-b flex justify-between items-center" style="border-color: var(--line-soft);">
                             <h3 class="text-[15px] font-semibold tracking-tight" style="color: var(--ink);">Procurement Data</h3>
-                            <a href="supplier_profile.php?id=<?= $material['supplier_id'] ?>" class="text-[12px] font-medium" style="color: var(--ink); text-decoration: underline;">View Supplier</a>
+                            <a href="supplier_profile.php?id=<?= urlencode($material['supplier_db_id']) ?>" class="text-[12px] font-medium" style="color: var(--ink); text-decoration: underline;">View Supplier</a>
                         </div>
                         <div class="px-6">
                             <div class="info-row">
@@ -284,9 +355,9 @@ $stock_percentage = ($material['stock'] / $material['capacity']) * 100;
                                 <p class="info-value mono" style="font-size:12.5px;"><?= htmlspecialchars($material['lead_time']) ?></p>
                             </div>
                             <div class="info-row border-none pb-4">
-                                <button class="w-full btn-secondary py-2 mt-2 rounded-sm text-[12.5px] font-medium bg-white">
+                                <a href="new_purchase_order.php?material_id=<?= urlencode($material_row_id) ?>" class="w-full btn-secondary py-2 mt-2 rounded-sm text-[12.5px] font-medium bg-white">
                                     Generate Purchase Order
-                                </button>
+                                </a>
                             </div>
                         </div>
                     </div>

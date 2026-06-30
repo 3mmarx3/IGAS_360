@@ -1,35 +1,137 @@
 <?php
+session_start();
+require_once '../../config/db.php';
+
 $active_page = 'cylinders_inventory';
 $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Production', 'Cylinders Inventory', 'Cylinder Specs'];
 
-$sku = $_GET['sku'] ?? 'CYL-O2-50L';
+$sku = isset($_GET['sku']) ? $_GET['sku'] : '';
+
+$stmt = $pdo->prepare("
+    SELECT 
+        sku, 
+        gas_classification, 
+        volume, 
+        working_pressure, 
+        test_pressure, 
+        build_material, 
+        valve_spec, 
+        color_coding, 
+        MAX(initial_test_date) as last_hydro, 
+        MIN(next_test_due) as next_hydro 
+    FROM cylinder_batches 
+    WHERE sku = :sku 
+    GROUP BY sku, gas_classification, volume, working_pressure, test_pressure, build_material, valve_spec, color_coding 
+    LIMIT 1
+");
+$stmt->execute(['sku' => $sku]);
+$batchInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+
+$statStmt = $pdo->prepare("
+    SELECT 
+        COUNT(id) as total, 
+        SUM(CASE WHEN status = 'in_plant' THEN 1 ELSE 0 END) as plant, 
+        SUM(CASE WHEN status = 'with_client' THEN 1 ELSE 0 END) as clients, 
+        SUM(CASE WHEN status IN ('maintenance', 'scrapped') THEN 1 ELSE 0 END) as maint 
+    FROM cylinders 
+    WHERE sku = :sku
+");
+$statStmt->execute(['sku' => $sku]);
+$stats = $statStmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$batchInfo) {
+    $batchInfo = [
+        'sku' => $sku,
+        'gas_classification' => 'N/A',
+        'volume' => 'N/A',
+        'working_pressure' => '0',
+        'test_pressure' => '0',
+        'build_material' => 'N/A',
+        'valve_spec' => 'N/A',
+        'color_coding' => 'N/A',
+        'last_hydro' => 'N/A',
+        'next_hydro' => 'N/A'
+    ];
+}
+
+$total = (int)($stats['total'] ?? 0);
+$plant = (int)($stats['plant'] ?? 0);
+
+$status = 'optimal';
+if ($total > 0 && ($plant / $total) <= 0.20) {
+    $status = 'low';
+} elseif ($plant == 0 && $total > 0) {
+    $status = 'low';
+}
 
 $cylinder = [
-    'sku' => $sku,
-    'gas' => 'Oxygen (O₂)',
-    'size' => '50L',
-    'total' => 5400,
-    'plant' => 1200,
-    'clients' => 4150,
-    'maint' => 50,
-    'status' => 'optimal',
-    'working_pressure' => '200 Bar',
-    'test_pressure' => '300 Bar',
-    'material' => 'Seamless Steel (34CrMo4)',
-    'valve_type' => 'CGA 540',
-    'color_code' => 'White Shoulder / Black Body',
-    'last_hydro' => '2023-05-12',
-    'next_hydro' => '2028-05-12'
+    'sku' => $batchInfo['sku'],
+    'gas' => $batchInfo['gas_classification'],
+    'size' => $batchInfo['volume'],
+    'total' => $total,
+    'plant' => $plant,
+    'clients' => (int)($stats['clients'] ?? 0),
+    'maint' => (int)($stats['maint'] ?? 0),
+    'status' => $status,
+    'working_pressure' => $batchInfo['working_pressure'] . ' Bar',
+    'test_pressure' => $batchInfo['test_pressure'] . ' Bar',
+    'material' => $batchInfo['build_material'],
+    'valve_type' => $batchInfo['valve_spec'],
+    'color_code' => $batchInfo['color_coding'],
+    'last_hydro' => $batchInfo['last_hydro'],
+    'next_hydro' => $batchInfo['next_hydro']
 ];
 
-$logs = [
-    ['id' => 'TRX-8102', 'date' => '2026-06-23 09:15', 'event' => 'Dispatch', 'qty' => 150, 'ref' => 'SABIC Petrochemicals (ORD-7742)', 'user' => 'Dispatch Team'],
-    ['id' => 'TRX-8095', 'date' => '2026-06-22 16:45', 'event' => 'Return (Empty)', 'qty' => 120, 'ref' => 'Air Product Co.', 'user' => 'Gate Security'],
-    ['id' => 'TRX-8077', 'date' => '2026-06-21 11:30', 'event' => 'Refill', 'qty' => 300, 'ref' => 'Production Line 1', 'user' => 'System'],
-    ['id' => 'TRX-8050', 'date' => '2026-06-20 08:00', 'event' => 'Maintenance', 'qty' => 15, 'ref' => 'Sent for Hydro-testing', 'user' => 'Maint. Dept'],
-    ['id' => 'TRX-8012', 'date' => '2026-06-18 14:20', 'event' => 'Return (Empty)', 'qty' => 80, 'ref' => 'National Contracting', 'user' => 'Gate Security'],
-];
+$logStmt = $pdo->prepare("
+    SELECT 
+        c.status,
+        COUNT(c.id) as qty,
+        MAX(c.created_at) as date,
+        p.company_name as client_name
+    FROM cylinders c
+    LEFT JOIN partners p ON c.current_client_id = p.id
+    WHERE c.sku = :sku
+    GROUP BY c.status, p.company_name, DATE(c.created_at)
+    ORDER BY date DESC
+    LIMIT 20
+");
+$logStmt->execute(['sku' => $sku]);
+$rawLogs = $logStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$logs = [];
+foreach ($rawLogs as $index => $row) {
+    $event = 'Unknown';
+    $ref = 'System';
+    
+    switch($row['status']) {
+        case 'in_plant':
+            $event = 'Refill / In Plant';
+            $ref = 'Production Line / Plant';
+            break;
+        case 'with_client':
+            $event = 'Dispatch';
+            $ref = $row['client_name'] ? $row['client_name'] : 'Unknown Client';
+            break;
+        case 'maintenance':
+            $event = 'Maintenance';
+            $ref = 'Sent for Hydro-testing / Maint.';
+            break;
+        case 'scrapped':
+            $event = 'Scrapped';
+            $ref = 'Out of Service';
+            break;
+    }
+
+    $logs[] = [
+        'id' => 'TRX-' . (8100 - $index),
+        'date' => date('Y-m-d H:i', strtotime($row['date'])),
+        'event' => $event,
+        'qty' => $row['qty'],
+        'ref' => $ref,
+        'user' => 'System'
+    ];
+}
 
 $statusStyles = [
     'optimal' => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Healthy Inventory'],
@@ -37,14 +139,15 @@ $statusStyles = [
 ];
 
 $eventStyles = [
-    'Dispatch'       => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A'],
-    'Return (Empty)' => ['bg' => '#F2F1EF', 'fg' => '#5C5A56'],
-    'Refill'         => ['bg' => '#EAF1E7', 'fg' => '#45663F'],
-    'Maintenance'    => ['bg' => '#F8E9E7', 'fg' => '#963B33'],
+    'Dispatch'          => ['bg' => '#E8F1F5', 'fg' => '#2A6B8A'],
+    'Refill / In Plant' => ['bg' => '#EAF1E7', 'fg' => '#45663F'],
+    'Maintenance'       => ['bg' => '#F8E9E7', 'fg' => '#963B33'],
+    'Scrapped'          => ['bg' => '#F2F1EF', 'fg' => '#5C5A56'],
+    'Unknown'           => ['bg' => '#F2F1EF', 'fg' => '#5C5A56']
 ];
 
 $cs = $statusStyles[$cylinder['status']];
-$plant_pct = ($cylinder['plant'] / $cylinder['total']) * 100;
+$plant_pct = $cylinder['total'] > 0 ? ($cylinder['plant'] / $cylinder['total']) * 100 : 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -224,21 +327,27 @@ $plant_pct = ($cylinder['plant'] / $cylinder['total']) * 100;
                                 </tr>
                             </thead>
                             <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                                <?php foreach ($logs as $l): ?>
-                                <?php $es = $eventStyles[$l['event']]; ?>
-                                <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                    <td class="pl-6 pr-3 py-3.5 num font-medium" style="color: var(--ink);"><?= htmlspecialchars($l['id']) ?></td>
-                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($l['date']) ?></td>
-                                    <td class="px-3 py-3.5">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-[11px] font-medium" style="background: <?= $es['bg'] ?>; color: <?= $es['fg'] ?>;">
-                                            <?= htmlspecialchars($l['event']) ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-3 py-3.5 text-right font-medium num" style="color: var(--ink);"><?= number_format($l['qty']) ?></td>
-                                    <td class="px-3 py-3.5 text-[12.5px]" style="color: var(--ink);"><?= htmlspecialchars($l['ref']) ?></td>
-                                    <td class="pr-6 py-3.5 text-right font-medium" style="color: var(--mute);"><?= htmlspecialchars($l['user']) ?></td>
-                                </tr>
-                                <?php endforeach; ?>
+                                <?php if (!empty($logs)): ?>
+                                    <?php foreach ($logs as $l): ?>
+                                    <?php $es = $eventStyles[$l['event']]; ?>
+                                    <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                        <td class="pl-6 pr-3 py-3.5 num font-medium" style="color: var(--ink);"><?= htmlspecialchars($l['id']) ?></td>
+                                        <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($l['date']) ?></td>
+                                        <td class="px-3 py-3.5">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-[11px] font-medium" style="background: <?= $es['bg'] ?>; color: <?= $es['fg'] ?>;">
+                                                <?= htmlspecialchars($l['event']) ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-3 py-3.5 text-right font-medium num" style="color: var(--ink);"><?= number_format($l['qty']) ?></td>
+                                        <td class="px-3 py-3.5 text-[12.5px]" style="color: var(--ink);"><?= htmlspecialchars($l['ref']) ?></td>
+                                        <td class="pr-6 py-3.5 text-right font-medium" style="color: var(--mute);"><?= htmlspecialchars($l['user']) ?></td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="6" class="text-center py-6 text-sm" style="color: var(--mute);">لا توجد حركات مسجلة لهذه الأسطوانات.</td>
+                                    </tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>

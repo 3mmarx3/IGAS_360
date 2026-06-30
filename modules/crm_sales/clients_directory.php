@@ -239,12 +239,12 @@ $statusStyles = [
                             <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft);">
                                 <th class="pl-6 pr-2 py-3 font-medium w-8"><span class="checkbox-sq"></span></th>
                                 <th class="px-3 py-3 font-medium">Account</th>
+                                <th class="px-3 py-3 font-medium">Status</th>
                                 <th class="px-3 py-3 font-medium">Type</th>
                                 <th class="px-3 py-3 font-medium">Segment</th>
                                 <th class="px-3 py-3 font-medium">Last Order</th>
                                 <th class="px-3 py-3 font-medium text-right">Lifetime Value</th>
                                 <th class="px-3 py-3 font-medium text-right">Balance Due</th>
-                                <th class="px-3 py-3 font-medium">Status</th>
                                 <th class="pr-6 py-3 font-medium text-right">Actions</th>
                             </tr>
                         </thead>
@@ -268,23 +268,32 @@ $statusStyles = [
                                         <div class="flex items-center gap-2.5">
                                             <span class="avatar-sq" style="background:<?= $avatarBg ?>; color:<?= $avatarFg ?>; <?= $avatarBorder ?>"><?= htmlspecialchars($c['initials']) ?></span>
                                             <div class="min-w-0">
-                                                <a href="./client_profile.php?type=client" class="font-medium hover:underline block truncate" style="color: var(--ink); text-decoration: none;"><?= htmlspecialchars($c['name']) ?></a>
+                                                <a href="./client_profile.php?id=<?= urlencode($c['id']) ?>" class="font-medium hover:underline block truncate" style="color: var(--ink); text-decoration: none;"><?= htmlspecialchars($c['name']) ?></a>
                                                 <span class="text-[11px] mono" style="color: var(--mute-soft);"><?= htmlspecialchars($c['id']) ?></span>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td class="px-3 py-3.5">
+                                        <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
+                                            <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
+                                        </span>
                                     </td>
                                     <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($c['type']) ?></td>
                                     <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($c['segment']) ?></td>
                                     <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($c['last_order']) ?></td>
                                     <td class="px-3 py-3.5 text-right font-medium num" style="color: var(--ink);"><?= number_format($c['lifetime']) ?></td>
                                     <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $c['balance'] > 0 ? 'var(--ink)' : 'var(--mute-soft)' ?>;"><?= $c['balance'] > 0 ? number_format($c['balance']) : '—' ?></td>
-                                    <td class="px-3 py-3.5">
-                                        <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
-                                            <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
-                                        </span>
-                                    </td>
-                                    <td class="pr-6 py-3.5 text-right">
-                                        <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+                                    <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-4">
+                                        <a href="client_profile.php?id=<?= urlencode($c['id']) ?>" class="transition-colors" style="color: var(--mute); text-decoration: none;" title="View Profile" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="eye" aria-hidden="true" class="lucide lucide-eye w-4 h-4"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                        </a>
+                                        <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('Are you sure you want to delete this client?');">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="client_id" value="<?= htmlspecialchars($c['id']) ?>">
+                                            <button type="submit" class="transition-colors bg-transparent border-none cursor-pointer flex items-center" style="color: #963B33; padding: 0;" title="Delete Client" onmouseover="this.style.color='#7a2d26'" onmouseout="this.style.color='#963B33'">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="trash-2" aria-hidden="true" class="lucide lucide-trash-2 w-4 h-4"><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                            </button>
+                                        </form>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>

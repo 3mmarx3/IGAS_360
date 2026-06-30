@@ -311,7 +311,7 @@ $ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
                                     <th class="px-3 py-3 font-medium">Destination</th>
                                     <th class="px-3 py-3 font-medium">Date &amp; Time</th>
                                     <th class="px-3 py-3 font-medium text-right">Status</th>
-                                    <th class="pr-6 py-3 font-medium text-right">View</th>
+                                    <th class="pr-6 py-3 font-medium text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
@@ -332,27 +332,33 @@ $ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
                                         </span>
                                     </td>
                                     <td class="pr-6 py-3.5 text-right">
-                                        <button type="button"
-                                            class="trip-view-btn transition-colors"
-                                            style="color: var(--mute); background: none; border: none; padding: 0;"
-                                            title="View Trip Details"
-                                            onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'"
-                                            data-manifest="<?= htmlspecialchars($t['id']) ?>"
-                                            data-order="<?= htmlspecialchars($t['order_ref']) ?>"
-                                            data-destination="<?= htmlspecialchars($t['destination']) ?>"
-                                            data-date="<?= htmlspecialchars($formatted_date) ?>"
-                                            data-time="<?= htmlspecialchars($formatted_time) ?>"
-                                            data-vehicle="<?= htmlspecialchars($t['vehicle_id']) ?>"
-                                            data-distance="<?= htmlspecialchars($t['distance']) ?>"
-                                            data-instructions="<?= htmlspecialchars($t['instructions'] ?? '') ?>"
-                                            data-status="<?= htmlspecialchars($t['status']) ?>"
-                                            data-status-label="<?= htmlspecialchars($ts['label']) ?>"
-                                            data-status-bg="<?= htmlspecialchars($ts['bg']) ?>"
-                                            data-status-fg="<?= htmlspecialchars($ts['fg']) ?>"
-                                            data-pending="<?= $is_pending ? '1' : '0' ?>"
-                                        >
-                                            <i data-lucide="eye" class="w-4 h-4"></i>
-                                        </button>
+                                        <div class="flex items-center justify-end gap-3">
+                                            <button type="button"
+                                                class="trip-view-btn transition-colors"
+                                                style="color: var(--mute); background: none; border: none; padding: 0;"
+                                                title="Manage Trip"
+                                                onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'"
+                                                data-manifest="<?= htmlspecialchars($t['id']) ?>"
+                                                data-order="<?= htmlspecialchars($t['order_ref']) ?>"
+                                                data-destination="<?= htmlspecialchars($t['destination']) ?>"
+                                                data-date="<?= htmlspecialchars($formatted_date) ?>"
+                                                data-time="<?= htmlspecialchars($formatted_time) ?>"
+                                                data-vehicle="<?= htmlspecialchars($t['vehicle_id']) ?>"
+                                                data-distance="<?= htmlspecialchars($t['distance']) ?>"
+                                                data-instructions="<?= htmlspecialchars($t['instructions'] ?? '') ?>"
+                                                data-status="<?= htmlspecialchars($t['status']) ?>"
+                                                data-status-label="<?= htmlspecialchars($ts['label']) ?>"
+                                                data-status-bg="<?= htmlspecialchars($ts['bg']) ?>"
+                                                data-status-fg="<?= htmlspecialchars($ts['fg']) ?>"
+                                                data-pending="<?= $is_pending ? '1' : '0' ?>"
+                                            >
+                                                <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                                            </button>
+                                            
+                                            <a href="order_details.php?order_num=<?= urlencode($t['order_ref']) ?>" class="transition-colors" style="color: var(--mute); display: inline-flex;" title="View Full Order Details" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
+                                                <i data-lucide="eye" class="w-4 h-4"></i>
+                                            </a>
+                                        </div>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
@@ -422,7 +428,6 @@ $ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
         </div>
     </main>
 
-    <!-- Modal: Trip Details -->
     <div class="modal-overlay" id="tripModalOverlay">
         <div class="modal-box">
             <div class="px-6 py-5 border-b flex justify-between items-center" style="border-color: var(--line-soft);">
