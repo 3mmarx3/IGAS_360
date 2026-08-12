@@ -4,6 +4,7 @@ $p = $active_page ?? '';
 ?>
 <aside class="w-64 flex flex-col flex-shrink-0" style="background: var(--sidebar); color: var(--sidebar-text);">
     <div class="flex-1 overflow-y-auto">
+
         <div class="h-16 flex items-center px-6 border-b flex-shrink-0" style="border-color: var(--sidebar-line);">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 flex items-center justify-center text-white font-semibold text-[13px] mono border" style="border-color: #3A3A3A; background: #232323;">IG</div>
@@ -23,7 +24,15 @@ $p = $active_page ?? '';
         </button>
 
         <div class="pt-6">
-            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] mb-2 px-6" style="color: #555350;">CRM &amp; Sales</p>
+
+            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] mb-2 px-6" style="color: #555350;">Overview</p>
+            <nav class="px-3">
+                <a href="/IGAS_360/modules/main/dashboard.php" class="nav-row <?= ($p === 'dashboard' || $current_file === 'dashboard.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px]">
+                    <i data-lucide="layout-dashboard" class="w-[16px] h-[16px]"></i>Dashboard
+                </a>
+            </nav>
+
+            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] mb-2 px-6 mt-7" style="color: #555350;">CRM &amp; Sales</p>
             <nav class="px-3">
                 <a href="/IGAS_360/modules/crm_sales/clients_directory.php" class="nav-row <?= ($p === 'clients_directory' || $current_file === 'clients_directory.php') ? 'active' : '' ?> flex items-center justify-between px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <span class="flex items-center gap-3"><i data-lucide="users" class="w-[16px] h-[16px]"></i>Clients Directory</span>
@@ -37,8 +46,11 @@ $p = $active_page ?? '';
                 <a href="/IGAS_360/modules/crm_sales/collections_invoices.php" class="nav-row <?= ($p === 'collections_invoices' || $current_file === 'collections_invoices.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="wallet" class="w-[16px] h-[16px]"></i>Collections &amp; Invoices
                 </a>
-                <a href="/IGAS_360/modules/crm_sales/client_contracts.php" class="nav-row <?= ($p === 'client_contracts' || $current_file === 'client_contracts.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px]">
+                <a href="/IGAS_360/modules/crm_sales/client_contracts.php" class="nav-row <?= ($p === 'client_contracts' || $current_file === 'client_contracts.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="file-signature" class="w-[16px] h-[16px]"></i>Client Contracts
+                </a>
+                <a href="/IGAS_360/modules/crm_sales/followup_reminders.php" class="nav-row <?= ($p === 'followup_reminders' || $current_file === 'followup_reminders.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px]">
+                    <i data-lucide="bell-ring" class="w-[16px] h-[16px]"></i>Follow-up Reminders
                 </a>
             </nav>
 
@@ -53,14 +65,26 @@ $p = $active_page ?? '';
                 <a href="/IGAS_360/modules/production/cylinders_inventory.php" class="nav-row <?= ($p === 'cylinders_inventory' || $current_file === 'cylinders_inventory.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="cylinder" class="w-[16px] h-[16px]"></i>Cylinders Inventory
                 </a>
+                <a href="/IGAS_360/modules/production/customer_tanks.php" class="nav-row <?= ($p === 'customer_tanks' || $current_file === 'customer_tanks.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
+                    <i data-lucide="warehouse" class="w-[16px] h-[16px]"></i>Customer Tanks
+                </a>
                 <a href="/IGAS_360/modules/production/daily_log_shifts.php" class="nav-row <?= ($p === 'daily_log_shifts' || $current_file === 'daily_log_shifts.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="factory" class="w-[16px] h-[16px]"></i>Daily Log &amp; Shifts
+                </a>
+                <a href="/IGAS_360/modules/production/monthly_yearly_production.php" class="nav-row <?= ($p === 'monthly_yearly_production' || $current_file === 'monthly_yearly_production.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
+                    <i data-lucide="calendar-days" class="w-[16px] h-[16px]"></i>Monthly &amp; Yearly Prod
+                </a>
+                <a href="/IGAS_360/modules/production/liquid_tracking.php" class="nav-row <?= ($p === 'liquid_tracking' || $current_file === 'liquid_tracking.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
+                    <i data-lucide="droplet" class="w-[16px] h-[16px]"></i>Liquid Tracking &amp; Recon
                 </a>
                 <a href="/IGAS_360/modules/production/gases_mixtures.php" class="nav-row <?= ($p === 'gases_mixtures' || $current_file === 'gases_mixtures.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="test-tubes" class="w-[16px] h-[16px]"></i>Gases &amp; Mixtures
                 </a>
-                <a href="/IGAS_360/modules/production/yield_loss_reports.php" class="nav-row <?= ($p === 'yield_loss_reports' || $current_file === 'yield_loss_reports.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px]">
+                <a href="/IGAS_360/modules/production/yield_loss_reports.php" class="nav-row <?= ($p === 'yield_loss_reports' || $current_file === 'yield_loss_reports.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="scale" class="w-[16px] h-[16px]"></i>Yield &amp; Loss Reports
+                </a>
+                <a href="/IGAS_360/modules/production/cost_profit.php" class="nav-row <?= ($p === 'cost_profit' || $current_file === 'cost_profit.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px]">
+                    <i data-lucide="circle-dollar-sign" class="w-[16px] h-[16px]"></i>Cost &amp; Profit
                 </a>
             </nav>
 
@@ -94,10 +118,24 @@ $p = $active_page ?? '';
                 <a href="/IGAS_360/modules/insights/partner_approvals.php" class="nav-row <?= ($p === 'partner_approvals' || $current_file === 'partner_approvals.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="user-check" class="w-[16px] h-[16px]"></i>Partner Approvals
                 </a>
+                <a href="/IGAS_360/modules/insights/team_access.php" class="nav-row <?= ($p === 'team_access' || $current_file === 'team_access.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
+                    <i data-lucide="user-cog" class="w-[16px] h-[16px]"></i>Team &amp; Access
+                </a>
                 <a href="/IGAS_360/modules/insights/system_settings.php" class="nav-row <?= ($p === 'system_settings' || $current_file === 'system_settings.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px]">
                     <i data-lucide="settings" class="w-[16px] h-[16px]"></i>System Settings
                 </a>
             </nav>
+
+            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] mb-2 px-6 mt-7" style="color: #555350;">Tools</p>
+            <nav class="px-3">
+                <a href="/IGAS_360/modules/tools/unit_converter.php" class="nav-row <?= ($p === 'unit_converter' || $current_file === 'unit_converter.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
+                    <i data-lucide="ruler" class="w-[16px] h-[16px]"></i>Unit Converter
+                </a>
+                <a href="/IGAS_360/modules/tools/gas_converter.php" class="nav-row <?= ($p === 'gas_converter' || $current_file === 'gas_converter.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px]">
+                    <i data-lucide="repeat" class="w-[16px] h-[16px]"></i>Gas Converter
+                </a>
+            </nav>
+
         </div>
     </div>
 
