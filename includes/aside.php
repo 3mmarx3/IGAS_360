@@ -90,11 +90,13 @@ $p = $active_page ?? '';
 
             <p class="text-[10px] font-semibold uppercase tracking-[0.16em] mb-2 px-6 mt-7" style="color: #555350;">Logistics &amp; Fleet</p>
             <nav class="px-3">
-                <a href="/IGAS_360/modules/logistics_fleet/vehicles_fleet.php" class="nav-row <?= ($p === 'vehicles_fleet' || $current_file === 'vehicles_fleet.php') ? 'active' : '' ?> flex items-center justify-between px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
-                    <span class="flex items-center gap-3"><i data-lucide="truck" class="w-[16px] h-[16px]"></i>Vehicles Fleet</span>
-                </a>
+             
                 <a href="/IGAS_360/modules/logistics_fleet/drivers_directory.php" class="nav-row <?= (in_array($p, ['drivers_directory', 'driver_profile']) || $current_file === 'drivers_directory.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="users-2" class="w-[16px] h-[16px]"></i>Drivers Directory
+                </a>
+
+                   <a href="/IGAS_360/modules/logistics_fleet/vehicles_fleet.php" class="nav-row <?= ($p === 'vehicles_fleet' || $current_file === 'vehicles_fleet.php') ? 'active' : '' ?> flex items-center justify-between px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
+                    <span class="flex items-center gap-3"><i data-lucide="truck" class="w-[16px] h-[16px]"></i>Vehicles Fleet</span>
                 </a>
                 <a href="/IGAS_360/modules/logistics_fleet/dispatch_delivery.php" class="nav-row <?= ($p === 'dispatch_delivery' || $current_file === 'dispatch_delivery.php') ? 'active' : '' ?> flex items-center gap-3 px-3 py-2.5 rounded-sm font-medium text-[13.5px] mb-0.5">
                     <i data-lucide="map-pin" class="w-[16px] h-[16px]"></i>Dispatch &amp; Delivery

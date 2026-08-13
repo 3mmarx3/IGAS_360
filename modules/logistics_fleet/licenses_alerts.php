@@ -69,16 +69,14 @@ foreach ($all_docs as $doc) {
         $valid_docs++;
     }
 
-    if ($status !== 'active') {
-        $alerts[] = [
-            'id'     => $doc['id'],
-            'name'   => $doc['name'],
-            'type'   => $doc['type'],
-            'expiry' => $doc['expiry'],
-            'days'   => $days,
-            'status' => $status
-        ];
-    }
+    $alerts[] = [
+        'id'     => $doc['id'],
+        'name'   => $doc['name'],
+        'type'   => $doc['type'],
+        'expiry' => $doc['expiry'],
+        'days'   => $days,
+        'status' => $status
+    ];
 }
 
 usort($alerts, fn($a, $b) => $a['days'] <=> $b['days']);
@@ -87,6 +85,7 @@ $total_alerts = count($alerts);
 $compliance = $total_monitored > 0 ? round(($valid_docs / $total_monitored) * 100, 1) : 100;
 
 $statusStyles = [
+    'active'   => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Valid & Up to Date'],
     'expired'  => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Expired'],
     'critical' => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Action Required'],
     'warning'  => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Expiring Soon'],
@@ -112,6 +111,41 @@ $iconMap = [
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="../../assets/css/main.css">
+    <style>
+        :root {
+            --ink: #1A1A1A; --ink-soft: #2E2E2E; --paper: #FFFFFF; --paper-dim: #F7F7F6;
+            --paper-deep: #EFEEEC; --line: #D8D6D1; --line-soft: #E7E5E1; --accent: #9A7B2E;
+            --accent-soft: #FBF3DF; --mute: #767470; --mute-soft: #A6A39D; --sidebar: #1A1A1A;
+            --sidebar-line: #2E2E2E; --sidebar-text: #B8B6B1;
+        }
+        * { box-sizing: border-box; } html { font-size: 16px; }
+        body { font-family: 'IBM Plex Sans', sans-serif; background-color: var(--paper-dim); color: var(--ink); font-feature-settings: "tnum" 1; }
+        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
+        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
+        a, button { -webkit-tap-highlight-color: transparent; }
+        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
+        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
+        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
+        .card { background: var(--paper); border: 1px solid var(--line-soft); }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
+        .btn-primary:hover { background: var(--ink-soft); }
+        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
+        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
+        .meter-bar { background: var(--paper-deep); border: 1px solid var(--line-soft); border-radius: 2px; }
+        .meter-fill { background: var(--ink); }
+        .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 3px; line-height: 1; }
+        .checkbox-sq { width: 15px; height: 15px; border: 1.5px solid var(--mute-soft); border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; transition: border-color 0.15s ease; }
+        .checkbox-sq:hover { border-color: var(--ink); }
+        .tab-item { position: relative; transition: color 0.15s ease; cursor: pointer; padding-bottom: 11px; }
+        .tab-item::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; transition: background 0.15s ease; }
+        .tab-item.active { color: var(--ink); } .tab-item.active::after { background: var(--ink); }
+        .tab-item:not(.active) { color: var(--mute); } .tab-item:not(.active):hover { color: var(--ink); }
+    </style>
 </head>
 <body class="flex h-screen overflow-hidden antialiased">
 
@@ -214,7 +248,7 @@ $iconMap = [
                         </div>
                     </div>
                     <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">All Alerts <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $total_alerts ?></span></span>
+                        <span class="tab-item active">All Documents <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $total_alerts ?></span></span>
                         <span class="tab-item text-red-700">Critical / Expired <span class="num text-[11px]" style="color: #963B33;"><?= $critical_docs ?></span></span>
                         <span class="tab-item">Warnings <span class="num text-[11px]" style="color: var(--mute-soft);"><?= $warning_docs ?></span></span>
                     </div>
@@ -239,6 +273,7 @@ $iconMap = [
                                 $statusObj = $statusStyles[$a['status']];
                                 $icon = $iconMap[$a['type']] ?? 'file';
                                 $isExpired = $a['status'] === 'expired';
+                                $isActive = $a['status'] === 'active';
                                 $daysColor = $isExpired ? '#963B33' : ($a['status'] === 'critical' ? '#963B33' : 'var(--ink)');
                             ?>
                             <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
@@ -267,19 +302,23 @@ $iconMap = [
                                     </span>
                                 </td>
                                 <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
+                                    <?php if (!$isActive): ?>
                                     <form method="POST" action="" class="m-0 p-0 inline-block">
                                         <input type="hidden" name="action" value="renew">
                                         <input type="hidden" name="entity_id" value="<?= htmlspecialchars($a['id']) ?>">
                                         <input type="hidden" name="doc_type" value="<?= htmlspecialchars($a['type']) ?>">
                                         <button type="submit" class="text-[12px] font-medium bg-transparent cursor-pointer" style="color: var(--ink); border: none; border-bottom: 1px solid var(--ink); padding: 0;">Renew</button>
                                     </form>
+                                    <?php else: ?>
+                                        <span class="text-[12px] font-medium flex items-center gap-1" style="color: #45663F;"><i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Up to date</span>
+                                    <?php endif; ?>
                                     <button class="transition-colors bg-transparent border-none cursor-pointer" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
                             <?php if (empty($alerts)): ?>
                             <tr>
-                                <td colspan="7" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No compliance alerts at this moment. All documents are up to date.</td>
+                                <td colspan="7" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No documents found in the system.</td>
                             </tr>
                             <?php endif; ?>
                         </tbody>
@@ -287,7 +326,7 @@ $iconMap = [
                 </div>
 
                 <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($alerts) > 0 ? '1' : '0' ?>–<?= count($alerts) ?> of <?= $total_alerts ?> Pending Alerts</span>
+                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($alerts) > 0 ? '1' : '0' ?>–<?= count($alerts) ?> of <?= $total_alerts ?> Documents</span>
                     <div class="flex items-center gap-1.5">
                         <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
                         <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>

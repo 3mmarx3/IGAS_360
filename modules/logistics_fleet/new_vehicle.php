@@ -7,24 +7,16 @@ $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Add New Vehicle'];
 
 $error_msg = '';
 
-try {
-    $stmt_drivers = $pdo->query("SELECT driver_id, full_name FROM drivers WHERE status = 'active' ORDER BY full_name ASC");
-    $drivers = $stmt_drivers->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $drivers = [];
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fleet_id = $_POST['fleet_id'] ?? '';
     $plate_number = trim($_POST['plate_number'] ?? '');
     $make_model = trim($_POST['make_model'] ?? '');
-    $vehicle_type = $_POST['vehicle_type'] ?? '';
+    $vehicle_type = trim($_POST['vehicle_type'] ?? '');
     $vin = trim($_POST['vin'] ?? '');
     $manufacturing_year = !empty($_POST['manufacturing_year']) ? (int)$_POST['manufacturing_year'] : null;
     $load_capacity = !empty($_POST['load_capacity']) ? (float)$_POST['load_capacity'] : 0;
     $cylinder_capacity = !empty($_POST['cylinder_capacity']) ? (int)$_POST['cylinder_capacity'] : 0;
-    $fuel_type = $_POST['fuel_type'] ?? 'diesel';
-    $driver_id = $_POST['driver_id'] ?? 'unassigned';
+    $fuel_type = trim($_POST['fuel_type'] ?? 'diesel');
     $status = $_POST['status'] ?? 'available';
     $registration_expiry = !empty($_POST['registration_expiry']) ? $_POST['registration_expiry'] : null;
     $insurance_expiry = !empty($_POST['insurance_expiry']) ? $_POST['insurance_expiry'] : null;
@@ -35,11 +27,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $stmt = $pdo->prepare("
                 INSERT INTO vehicles (fleet_id, plate_number, make_model, vehicle_type, vin, manufacturing_year, load_capacity, cylinder_capacity, fuel_type, driver_id, status, registration_expiry, insurance_expiry)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unassigned', ?, ?, ?)
             ");
             $stmt->execute([
                 $fleet_id, $plate_number, $make_model, $vehicle_type, $vin, $manufacturing_year, 
-                $load_capacity, $cylinder_capacity, $fuel_type, $driver_id, $status, 
+                $load_capacity, $cylinder_capacity, $fuel_type, $status, 
                 $registration_expiry, $insurance_expiry
             ]);
             
@@ -144,7 +136,7 @@ $next_fleet_id = 'FLT-' . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
                 <div class="mb-7">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2" style="color: var(--mute);">Logistics & Fleet</p>
                     <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Register New Vehicle</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Add a new unit to the fleet database, configure specifications, and assign drivers.</p>
+                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Add a new unit to the fleet database, configure specifications, and set initial status.</p>
                 </div>
 
                 <?php if ($error_msg): ?>
@@ -174,13 +166,7 @@ $next_fleet_id = 'FLT-' . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
                             </div>
                             <div>
                                 <label class="form-label">Vehicle Type</label>
-                                <select name="vehicle_type" class="form-select" required>
-                                    <option value="" disabled selected>Select vehicle classification</option>
-                                    <option value="cryo">Cryogenic Tanker</option>
-                                    <option value="bobtail">Bobtail Tanker</option>
-                                    <option value="flatbed">Flatbed Truck</option>
-                                    <option value="pickup">Pickup Truck</option>
-                                </select>
+                                <input type="text" name="vehicle_type" class="form-input" placeholder="e.g. Cryogenic Tanker" required>
                             </div>
                             <div>
                                 <label class="form-label">Chassis Number (VIN)</label>
@@ -215,32 +201,17 @@ $next_fleet_id = 'FLT-' . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
                             </div>
                             <div>
                                 <label class="form-label">Fuel Type</label>
-                                <select name="fuel_type" class="form-select">
-                                    <option value="diesel">Diesel</option>
-                                    <option value="petrol">Petrol (91)</option>
-                                    <option value="petrol_95">Petrol (95)</option>
-                                </select>
+                                <input type="text" name="fuel_type" class="form-input" placeholder="e.g. Diesel">
                             </div>
                         </div>
 
                         <hr class="mb-8" style="border-color: var(--line-soft);">
 
                         <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="shield-check" class="w-4 h-4" style="color: var(--mute);"></i>Compliance & Assignment
+                            <i data-lucide="shield-check" class="w-4 h-4" style="color: var(--mute);"></i>Compliance & Status
                         </h3>
 
-                        <div class="grid grid-cols-2 gap-6">
-                            <div>
-                                <label class="form-label">Assigned Driver</label>
-                                <select name="driver_id" class="form-select">
-                                    <option value="unassigned">Unassigned</option>
-                                    <?php foreach ($drivers as $driver): ?>
-                                        <option value="<?= htmlspecialchars($driver['driver_id']) ?>">
-                                            <?= htmlspecialchars($driver['full_name']) ?> (<?= htmlspecialchars($driver['driver_id']) ?>)
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
+                        <div class="grid grid-cols-3 gap-6">
                             <div>
                                 <label class="form-label">Initial Status</label>
                                 <select name="status" class="form-select">

@@ -41,19 +41,22 @@ $total_trips = $stmt_trips_count->fetchColumn();
 
 $stmt_trips = $pdo->prepare("
     SELECT 
-        manifest_id as id,
-        order_ref,
-        destination,
-        dispatch_date as date,
-        eta_time,
-        status,
-        distance,
-        instructions,
-        vehicle_id,
-        created_at
-    FROM dispatches 
-    WHERE driver_id = ? 
-    ORDER BY dispatch_date DESC 
+        ds.manifest_id as id,
+        ds.order_ref,
+        ds.destination,
+        ds.dispatch_date as date,
+        ds.eta_time,
+        ds.status,
+        ds.distance,
+        ds.instructions,
+        ds.vehicle_id,
+        ds.created_at,
+        v.make_model as trip_vehicle_name,
+        v.vehicle_type as trip_vehicle_type
+    FROM dispatches ds
+    LEFT JOIN vehicles v ON ds.vehicle_id = v.fleet_id
+    WHERE ds.driver_id = ? 
+    ORDER BY ds.dispatch_date DESC 
     LIMIT 6
 ");
 $stmt_trips->execute([$driver_code]);
@@ -304,14 +307,15 @@ $ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
                         </div>
                     </div>
                     <div class="overflow-x-auto flex-1">
-                        <table class="w-full text-left border-collapse">
+                        <table class="w-full text-left border-collapse whitespace-nowrap">
                             <thead>
                                 <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft);">
-                                    <th class="pl-6 pr-3 py-3 font-medium">Order Ref</th>
-                                    <th class="px-3 py-3 font-medium">Destination</th>
-                                    <th class="px-3 py-3 font-medium">Date &amp; Time</th>
-                                    <th class="px-3 py-3 font-medium text-right">Status</th>
-                                    <th class="pr-6 py-3 font-medium text-right">Actions</th>
+                                    <th class="pl-6 pr-3 py-3 font-medium whitespace-nowrap">Order Ref</th>
+                                    <th class="px-3 py-3 font-medium min-w-[200px]">Destination</th>
+                                    <th class="px-3 py-3 font-medium whitespace-nowrap">Vehicle</th>
+                                    <th class="px-3 py-3 font-medium whitespace-nowrap">Date &amp; Time</th>
+                                    <th class="px-3 py-3 font-medium text-right whitespace-nowrap">Status</th>
+                                    <th class="pr-6 py-3 font-medium text-right whitespace-nowrap">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
@@ -323,15 +327,21 @@ $ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
                                     $is_pending = strtolower($t['status']) === 'dispatched';
                                 ?>
                                 <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                    <td class="pl-6 pr-3 py-3.5 num font-medium" style="color: var(--ink);"><?= htmlspecialchars($t['order_ref']) ?></td>
-                                    <td class="px-3 py-3.5 text-[13px]" style="color: var(--ink);"><?= htmlspecialchars($t['destination']) ?></td>
-                                    <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($formatted_date) ?> · <?= htmlspecialchars($formatted_time) ?></td>
-                                    <td class="px-3 py-3.5 text-right">
+                                    <td class="pl-6 pr-3 py-3.5 num font-medium whitespace-nowrap" style="color: var(--ink);"><?= htmlspecialchars($t['order_ref']) ?></td>
+                                    <td class="px-3 py-3.5 text-[13px] min-w-[200px]" style="color: var(--ink); whitespace: normal;"><?= htmlspecialchars($t['destination']) ?></td>
+                                    <td class="px-3 py-3.5 whitespace-nowrap">
+                                        <div class="flex flex-col">
+                                            <span class="font-medium text-[12.5px]" style="color: var(--ink);"><?= htmlspecialchars($t['trip_vehicle_name'] ?? 'Unknown Vehicle') ?></span>
+                                            <span class="text-[11px] mono" style="color: var(--mute);"><?= htmlspecialchars($t['vehicle_id']) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-3.5 text-[12.5px] mono whitespace-nowrap" style="color: var(--mute);"><?= htmlspecialchars($formatted_date) ?> <span class="mx-1">·</span> <?= htmlspecialchars($formatted_time) ?></td>
+                                    <td class="px-3 py-3.5 text-right whitespace-nowrap">
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-[11px] font-medium" style="background: <?= $ts['bg'] ?>; color: <?= $ts['fg'] ?>;">
                                             <?= $ts['label'] ?>
                                         </span>
                                     </td>
-                                    <td class="pr-6 py-3.5 text-right">
+                                    <td class="pr-6 py-3.5 text-right whitespace-nowrap">
                                         <div class="flex items-center justify-end gap-3">
                                             <button type="button"
                                                 class="trip-view-btn transition-colors"
@@ -343,7 +353,7 @@ $ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
                                                 data-destination="<?= htmlspecialchars($t['destination']) ?>"
                                                 data-date="<?= htmlspecialchars($formatted_date) ?>"
                                                 data-time="<?= htmlspecialchars($formatted_time) ?>"
-                                                data-vehicle="<?= htmlspecialchars($t['vehicle_id']) ?>"
+                                                data-vehicle="<?= htmlspecialchars(($t['trip_vehicle_name'] ?? 'Unknown') . ' (' . $t['vehicle_id'] . ')') ?>"
                                                 data-distance="<?= htmlspecialchars($t['distance']) ?>"
                                                 data-instructions="<?= htmlspecialchars($t['instructions'] ?? '') ?>"
                                                 data-status="<?= htmlspecialchars($t['status']) ?>"
@@ -364,7 +374,7 @@ $ds = $statusStyles[$driver['status']] ?? $statusStyles['active'];
                                 <?php endforeach; ?>
                                 <?php if (empty($trips)): ?>
                                 <tr>
-                                    <td colspan="5" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No recent trips recorded for this driver.</td>
+                                    <td colspan="6" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No recent trips recorded for this driver.</td>
                                 </tr>
                                 <?php endif; ?>
                             </tbody>

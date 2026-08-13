@@ -8,10 +8,9 @@ $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Vehicles Fleet', 'Vehicle Logs'];
 $vehicle_id = $_GET['id'] ?? '';
 
 $stmt_vehicle = $pdo->prepare("
-    SELECT v.*, d.full_name as driver_name 
-    FROM vehicles v 
-    LEFT JOIN drivers d ON v.driver_id = d.driver_id OR v.driver_id = d.id
-    WHERE v.fleet_id = ?
+    SELECT * 
+    FROM vehicles 
+    WHERE fleet_id = ?
 ");
 $stmt_vehicle->execute([$vehicle_id]);
 $db_vehicle = $stmt_vehicle->fetch(PDO::FETCH_ASSOC);
@@ -38,7 +37,6 @@ $vehicle = [
     'plate' => $db_vehicle['plate_number'],
     'type' => ucfirst($db_vehicle['vehicle_type']),
     'make' => $db_vehicle['make_model'],
-    'driver' => $db_vehicle['driver_name'] ?: 'Unassigned',
     'status' => $db_vehicle['status'],
     'mileage' => $mileage,
     'fuel_level' => 78,
@@ -46,8 +44,44 @@ $vehicle = [
     'next_maintenance' => $next_maintenance
 ];
 
-$stmt_logs = $pdo->prepare("SELECT * FROM vehicle_logs WHERE fleet_id = ? ORDER BY event_date DESC, event_time DESC");
-$stmt_logs->execute([$vehicle_id]);
+$stmt_logs = $pdo->prepare("
+    SELECT 
+        l.id,
+        l.event_type,
+        l.event_date,
+        l.event_time,
+        l.odometer,
+        l.fuel_liters,
+        l.event_cost,
+        l.logged_by,
+        l.description,
+        (SELECT dr.full_name 
+         FROM dispatches ds 
+         LEFT JOIN drivers dr ON ds.driver_id = dr.driver_id 
+         WHERE ds.vehicle_id = l.fleet_id AND ds.dispatch_date = l.event_date 
+         LIMIT 1) as trip_driver
+    FROM vehicle_logs l 
+    WHERE l.fleet_id = ?
+    
+    UNION ALL
+    
+    SELECT 
+        d.id,
+        'dispatch' as event_type,
+        d.dispatch_date as event_date,
+        d.eta_time as event_time,
+        0 as odometer,
+        0 as fuel_liters,
+        0 as event_cost,
+        'System' as logged_by,
+        CONCAT('Dispatch: ', d.manifest_id, ' to ', d.destination, ' (Ref: ', d.order_ref, ')') as description,
+        (SELECT dr.full_name FROM drivers dr WHERE dr.driver_id = d.driver_id LIMIT 1) as trip_driver
+    FROM dispatches d
+    WHERE d.vehicle_id = ?
+    
+    ORDER BY event_date DESC, event_time DESC
+");
+$stmt_logs->execute([$vehicle_id, $vehicle_id]);
 $db_logs = $stmt_logs->fetchAll(PDO::FETCH_ASSOC);
 
 $logs = [];
@@ -84,12 +118,18 @@ foreach ($db_logs as $l) {
     $formatted_date = date('d M Y', strtotime($l['event_date']));
     $formatted_time = date('H:i', strtotime($l['event_time']));
     $date_time_display = date('d M Y, H:i', strtotime($l['event_date'] . ' ' . $l['event_time']));
+    
+    $driver_name = '-';
+    if (in_array($type, ['dispatch', 'arrival'])) {
+        $driver_name = $l['trip_driver'] ?: ($l['logged_by'] ?: 'Unknown Driver');
+    }
 
     $logs[] = [
         'date_time_display' => $date_time_display,
         'date' => $formatted_date,
         'time' => $formatted_time,
         'type' => $display_type,
+        'driver' => $driver_name,
         'desc' => $l['description'] ?: 'Log entry recorded',
         'operator' => $l['logged_by'] ?: 'System',
         'odometer' => $l['odometer'] ? number_format($l['odometer']) : '0',
@@ -128,7 +168,7 @@ foreach ($db_logs as $l) {
         ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
         a, button { -webkit-tap-highlight-color: transparent; }
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
+        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color: 0.15s ease; }
         .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
         .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
         .card { background: var(--paper); border: 1px solid var(--line-soft); }
@@ -205,9 +245,6 @@ foreach ($db_logs as $l) {
                                 <span class="status-dot" style="background:#2A6B8A;"></span><?= htmlspecialchars(ucfirst($vehicle['status'])) ?>
                             </span>
                         </div>
-                        <p class="text-[12px] mt-3 flex items-center gap-1.5" style="color: var(--ink);">
-                            <i data-lucide="user" class="w-3.5 h-3.5" style="color: var(--mute);"></i><?= htmlspecialchars($vehicle['driver']) ?>
-                        </p>
                     </div>
 
                     <div>
@@ -252,45 +289,51 @@ foreach ($db_logs as $l) {
                 <div class="overflow-x-auto">
                     
                 <table class="w-full text-left border-collapse">
-    <thead>
-        <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft); background: var(--paper-dim);">
-            <th class="px-3 py-3 font-medium">Fleet ID</th>
-            <th class="px-3 py-3 font-medium">Make & Model</th>
-            <th class="px-3 py-3 font-medium">Plate Number</th>
-            <th class="px-6 py-3 font-medium w-48">Date & Time</th>
-            <th class="px-3 py-3 font-medium">Event Type</th>
-            <th class="px-6 py-3 font-medium text-right w-24">Actions</th>
-        </tr>
-    </thead>
-    <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-        <?php if (empty($logs)): ?>
-        <tr>
-            <td colspan="6" class="px-6 py-8 text-center text-[13px]" style="color: var(--mute);">
-                No activity logs found for this vehicle.
-            </td>
-        </tr>
-        <?php else: ?>
-            <?php foreach ($logs as $log): ?>
-            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                <td class="px-3 py-3.5 font-medium num" style="color: var(--ink);"><?= htmlspecialchars($vehicle['id']) ?></td>
-                <td class="px-3 py-3.5" style="color: var(--ink);"><?= htmlspecialchars($vehicle['make']) ?></td>
-                <td class="px-3 py-3.5 mono text-[12.5px]" style="color: var(--mute);"><?= htmlspecialchars($vehicle['plate']) ?></td>
-                <td class="px-6 py-3.5 mono text-[12.5px]" style="color: var(--ink);"><?= htmlspecialchars($log['date_time_display']) ?></td>
-                <td class="px-3 py-3.5">
-                    <span class="inline-flex items-center gap-1.5 font-medium px-2 py-1 rounded-sm text-[12px]" style="background: <?= $log['bg'] ?>; color: <?= $log['color'] ?>;">
-                        <i data-lucide="<?= $log['icon'] ?>" class="w-3 h-3"></i><?= htmlspecialchars($log['type']) ?>
-                    </span>
-                </td>
-                <td class="px-6 py-3.5 text-right">
-                    <button type="button" class="transition-colors bg-transparent border-none cursor-pointer p-1" style="color: var(--mute);" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'" onclick="openLogModal(this)" data-log="<?= htmlspecialchars(json_encode($log)) ?>">
-                        <i data-lucide="eye" class="w-4 h-4"></i>
-                    </button>
-                </td>
-            </tr>
-            <?php endforeach; ?>
-        <?php endif; ?>
-    </tbody>
-</table>
+                    <thead>
+                        <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft); background: var(--paper-dim);">
+                            <th class="px-3 py-3 font-medium">Fleet ID</th>
+                            <th class="px-3 py-3 font-medium">Plate Number</th>
+                            <th class="px-3 py-3 font-medium">Event Type</th>
+                            <th class="px-3 py-3 font-medium">Driver</th>
+                            <th class="px-6 py-3 font-medium w-48">Date & Time</th>
+                            <th class="px-6 py-3 font-medium text-right w-24">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
+                        <?php if (empty($logs)): ?>
+                        <tr>
+                            <td colspan="6" class="px-6 py-8 text-center text-[13px]" style="color: var(--mute);">
+                                No activity logs found for this vehicle.
+                            </td>
+                        </tr>
+                        <?php else: ?>
+                            <?php foreach ($logs as $log): ?>
+                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
+                                <td class="px-3 py-3.5 font-medium num" style="color: var(--ink);"><?= htmlspecialchars($vehicle['id']) ?></td>
+                                <td class="px-3 py-3.5 mono text-[12.5px]" style="color: var(--mute);"><?= htmlspecialchars($vehicle['plate']) ?></td>
+                                <td class="px-3 py-3.5">
+                                    <span class="inline-flex items-center gap-1.5 font-medium px-2 py-1 rounded-sm text-[12px]" style="background: <?= $log['bg'] ?>; color: <?= $log['color'] ?>;">
+                                        <i data-lucide="<?= $log['icon'] ?>" class="w-3 h-3"></i><?= htmlspecialchars($log['type']) ?>
+                                    </span>
+                                </td>
+                                <td class="px-3 py-3.5" style="color: var(--ink);">
+                                    <?php if ($log['driver'] !== '-'): ?>
+                                        <span class="flex items-center gap-1.5 text-[12.5px]"><i data-lucide="user" class="w-3.5 h-3.5 text-[var(--mute-soft)]"></i><?= htmlspecialchars($log['driver']) ?></span>
+                                    <?php else: ?>
+                                        <span style="color: var(--mute-soft);">-</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-6 py-3.5 mono text-[12.5px]" style="color: var(--ink);"><?= htmlspecialchars($log['date_time_display']) ?></td>
+                                <td class="px-6 py-3.5 text-right">
+                                    <button type="button" class="transition-colors bg-transparent border-none cursor-pointer p-1" style="color: var(--mute);" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'" onclick="openLogModal(this)" data-log="<?= htmlspecialchars(json_encode($log)) ?>">
+                                        <i data-lucide="eye" class="w-4 h-4"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
                 </div>
             </div>
 
@@ -312,10 +355,14 @@ foreach ($db_logs as $l) {
                     <span class="info-val"><?= htmlspecialchars($vehicle['id']) ?> (<?= htmlspecialchars($vehicle['make']) ?> — <?= htmlspecialchars($vehicle['plate']) ?>)</span>
                 </div>
 
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6 pb-6 border-b" style="border-color: var(--line-soft);">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-6 mb-6 pb-6 border-b" style="border-color: var(--line-soft);">
                     <div class="info-block">
                         <span class="info-lbl">Event Type</span>
                         <span class="info-val" id="mdl-type">-</span>
+                    </div>
+                    <div class="info-block">
+                        <span class="info-lbl">Driver</span>
+                        <span class="info-val" id="mdl-driver">-</span>
                     </div>
                     <div class="info-block">
                         <span class="info-lbl">Date of Event</span>
@@ -331,7 +378,7 @@ foreach ($db_logs as $l) {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-6 mb-6 pb-6 border-b" style="border-color: var(--line-soft);">
+                <div id="metrics-row" class="grid grid-cols-2 md:grid-cols-3 gap-6 mb-6 pb-6 border-b" style="border-color: var(--line-soft);">
                     <div class="info-block">
                         <span class="info-lbl">Current Odometer</span>
                         <span class="info-val mono num"><span id="mdl-odo">-</span> <span class="text-[12px] font-normal" style="color: var(--mute);">KM</span></span>
@@ -365,15 +412,22 @@ foreach ($db_logs as $l) {
             const data = JSON.parse(btn.getAttribute('data-log'));
             
             document.getElementById('mdl-type').textContent = data.type;
+            document.getElementById('mdl-driver').textContent = data.driver !== '-' ? data.driver : 'N/A';
             document.getElementById('mdl-date').textContent = data.date;
             document.getElementById('mdl-time').textContent = data.time;
             document.getElementById('mdl-operator').textContent = data.operator;
-            document.getElementById('mdl-odo').textContent = data.odometer;
             
+            document.getElementById('mdl-odo').textContent = data.odometer;
             document.getElementById('mdl-fuel').textContent = data.fuel !== '-' ? data.fuel : 'N/A';
             document.getElementById('mdl-cost').textContent = data.cost !== '-' ? data.cost : 'N/A';
             
             document.getElementById('mdl-desc').textContent = data.desc;
+
+            if (data.type === 'Maintenance' || data.type === 'Refuel Operations') {
+                document.getElementById('metrics-row').style.display = 'grid';
+            } else {
+                document.getElementById('metrics-row').style.display = 'none';
+            }
 
             document.getElementById('log-modal-overlay').classList.remove('hidden');
         }

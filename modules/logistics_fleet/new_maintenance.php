@@ -21,7 +21,7 @@ try {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ticket_id = $_POST['ticket_id'] ?? $new_ticket_id;
-    $service_type = $_POST['service_type'] ?? '';
+    $service_type = trim($_POST['service_type'] ?? '');
     $vehicle_id = $_POST['vehicle_id'] ?? '';
     $odometer = isset($_POST['odometer']) && $_POST['odometer'] !== '' ? (int)$_POST['odometer'] : null;
     $scheduled_date = $_POST['scheduled_date'] ?? '';
@@ -44,15 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt_v = $pdo->prepare("UPDATE vehicles SET status = 'maintenance' WHERE fleet_id = ?");
             $stmt_v->execute([$vehicle_id]);
 
-            $service_type_labels = [
-                'preventive'  => 'Preventive Maintenance (PM)',
-                'repair'      => 'Corrective Repair',
-                'inspection'  => 'Safety / DOT Inspection',
-                'tires'       => 'Tire Replacement & Alignment',
-                'oil'         => 'Oil & Fluid Change',
-            ];
-            $service_type_label = $service_type_labels[$service_type] ?? ucfirst($service_type);
-            $log_description = "Service ticket {$ticket_id} ({$service_type_label}) scheduled at {$workshop}.";
+            $log_description = "Service ticket {$ticket_id} ({$service_type}) scheduled at {$workshop}.";
             if (!empty($instructions)) {
                 $log_description .= " Notes: {$instructions}";
             }
@@ -200,14 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <div>
                                 <label class="form-label">Service Type</label>
-                                <select class="form-select" name="service_type" required>
-                                    <option value="" disabled selected>Select category...</option>
-                                    <option value="preventive">Preventive Maintenance (PM)</option>
-                                    <option value="repair">Corrective Repair</option>
-                                    <option value="inspection">Safety / DOT Inspection</option>
-                                    <option value="tires">Tire Replacement & Alignment</option>
-                                    <option value="oil">Oil & Fluid Change</option>
-                                </select>
+                                <input type="text" name="service_type" class="form-input" placeholder="e.g. Preventive Maintenance, Oil Change" required>
                             </div>
                         </div>
 

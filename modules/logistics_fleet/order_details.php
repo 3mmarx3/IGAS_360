@@ -33,7 +33,14 @@ $stmt_items = $pdo->prepare("SELECT * FROM purchase_order_items WHERE purchase_o
 $stmt_items->execute([$order['id']]);
 $items = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
 
-$stmt_dispatch = $pdo->prepare("SELECT * FROM dispatches WHERE order_ref = ? ORDER BY id DESC LIMIT 1");
+$stmt_dispatch = $pdo->prepare("
+    SELECT d.*, v.make_model as vehicle_make, v.plate_number as vehicle_plate, dr.full_name as driver_name 
+    FROM dispatches d 
+    LEFT JOIN vehicles v ON d.vehicle_id = v.fleet_id 
+    LEFT JOIN drivers dr ON d.driver_id = dr.driver_id 
+    WHERE d.order_ref = ? 
+    ORDER BY d.id DESC LIMIT 1
+");
 $stmt_dispatch->execute([$order['order_number']]);
 $dispatch = $stmt_dispatch->fetch(PDO::FETCH_ASSOC);
 
@@ -294,14 +301,20 @@ $os = $statusStyles[$order['status']] ?? $statusStyles['draft'];
                         <p class="info-value mono" style="font-size:12.5px;"><?= htmlspecialchars(date('H:i', strtotime($dispatch['eta_time']))) ?></p>
                     </div>
                     <div>
-                        <p class="info-label">Vehicle</p>
-                        <p class="info-value mono" style="font-size:12.5px;"><?= htmlspecialchars($dispatch['vehicle_id']) ?></p>
+                        <p class="info-label">Vehicle Details</p>
+                        <p class="info-value" style="font-size:13px;"><?= htmlspecialchars($dispatch['vehicle_make'] ?? 'Unknown Vehicle') ?></p>
+                        <p class="info-sub mono"><?= htmlspecialchars($dispatch['vehicle_id']) ?> · <?= htmlspecialchars($dispatch['vehicle_plate'] ?? '') ?></p>
+                    </div>
+                    <div>
+                        <p class="info-label">Assigned Driver</p>
+                        <p class="info-value" style="font-size:13px;"><?= htmlspecialchars($dispatch['driver_name'] ?? 'Unknown Driver') ?></p>
+                        <p class="info-sub mono"><?= htmlspecialchars($dispatch['driver_id']) ?></p>
                     </div>
                     <div>
                         <p class="info-label">Distance</p>
                         <p class="info-value mono" style="font-size:12.5px;"><?= htmlspecialchars($dispatch['distance']) ?> KM</p>
                     </div>
-                    <div class="col-span-2">
+                    <div class="col-span-2 lg:col-span-4">
                         <p class="info-label">Instructions</p>
                         <p class="info-value" style="font-weight:400; font-size:13px; line-height:1.5;">
                             <?= !empty($dispatch['instructions']) ? nl2br(htmlspecialchars($dispatch['instructions'])) : 'No special instructions provided.' ?>

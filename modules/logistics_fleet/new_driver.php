@@ -21,27 +21,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $license_expiry = $_POST['license_expiry'] ?? '';
     $medical_expiry = !empty($_POST['medical_expiry']) ? $_POST['medical_expiry'] : null;
     $status = $_POST['status'] ?? 'active';
-    $assigned_vehicle = $_POST['assigned_vehicle'] ?? 'unassigned';
 
     if (empty($full_name) || empty($national_id) || empty($mobile_number) || empty($license_class) || empty($license_number) || empty($license_expiry)) {
         $error_msg = "Please fill in all required fields.";
     } else {
         try {
             $stmt = $pdo->prepare("
-                INSERT INTO drivers (driver_id, full_name, national_id, mobile_number, email, license_class, license_number, license_expiry, medical_expiry, status, assigned_vehicle)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO drivers (driver_id, full_name, national_id, mobile_number, email, license_class, license_number, license_expiry, medical_expiry, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 $new_driver_id, $full_name, $national_id, $mobile_number, $email, 
                 $license_class, $license_number, $license_expiry, $medical_expiry, 
-                $status, $assigned_vehicle
+                $status
             ]);
             
-            if ($assigned_vehicle !== 'unassigned') {
-                $stmt_veh = $pdo->prepare("UPDATE vehicles SET driver_id = ? WHERE fleet_id = ?");
-                $stmt_veh->execute([$new_driver_id, $assigned_vehicle]);
-            }
-
             header("Location: drivers_directory.php");
             exit;
         } catch (PDOException $e) {
@@ -49,9 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
-$stmt_vehicles = $pdo->query("SELECT fleet_id, make_model, driver_id FROM vehicles ORDER BY fleet_id ASC");
-$all_vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -240,23 +231,6 @@ $all_vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
                                         <option value="on_leave">On Leave / Vacation</option>
                                         <option value="suspended">Suspended</option>
                                     </select>
-                                </div>
-                                <div>
-                                    <label class="form-label">Assign to Vehicle</label>
-                                    <select name="assigned_vehicle" class="form-select mono">
-                                        <option value="unassigned" selected>-- Unassigned --</option>
-                                        <?php foreach ($all_vehicles as $veh): ?>
-                                            <?php 
-                                            $is_assigned = (!empty($veh['driver_id']) && strtolower($veh['driver_id']) !== 'unassigned');
-                                            $disabled_attr = $is_assigned ? 'disabled' : '';
-                                            $suffix = $is_assigned ? ' [Assigned to ' . htmlspecialchars($veh['driver_id']) . ']' : '';
-                                            ?>
-                                            <option value="<?= htmlspecialchars($veh['fleet_id']) ?>" <?= $disabled_attr ?>>
-                                                <?= htmlspecialchars($veh['fleet_id']) ?> (<?= htmlspecialchars($veh['make_model']) ?>)<?= $suffix ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <p class="text-[11px] mt-1.5" style="color: var(--mute);">You can assign a vehicle later from the dispatch panel.</p>
                                 </div>
                             </div>
                         </div>

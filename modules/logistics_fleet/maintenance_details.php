@@ -6,15 +6,16 @@ $base_url    = '../../';
 $breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Maintenance & Fuel', 'Ticket Details'];
 
 $ticket_id = $_GET['id'] ?? '';
+$search_col = is_numeric($ticket_id) ? 'id' : 'ticket_id';
 
 if (isset($_GET['action']) && $_GET['action'] === 'complete' && !empty($ticket_id)) {
-    $stmt_get_v = $pdo->prepare("SELECT vehicle_id FROM maintenance_tickets WHERE ticket_id = ? OR id = ?");
-    $stmt_get_v->execute([$ticket_id, $ticket_id]);
+    $stmt_get_v = $pdo->prepare("SELECT vehicle_id FROM maintenance_tickets WHERE $search_col = ?");
+    $stmt_get_v->execute([$ticket_id]);
     $v_id = $stmt_get_v->fetchColumn();
 
     if ($v_id) {
-        $upd_t = $pdo->prepare("UPDATE maintenance_tickets SET status = 'completed' WHERE ticket_id = ? OR id = ?");
-        $upd_t->execute([$ticket_id, $ticket_id]);
+        $upd_t = $pdo->prepare("UPDATE maintenance_tickets SET status = 'completed' WHERE $search_col = ?");
+        $upd_t->execute([$ticket_id]);
 
         $upd_v = $pdo->prepare("UPDATE vehicles SET status = 'available' WHERE fleet_id = ?");
         $upd_v->execute([$v_id]);
@@ -24,6 +25,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'complete' && !empty($ticket_i
     exit;
 }
 
+$stmt_col = is_numeric($ticket_id) ? 'm.id' : 'm.ticket_id';
 $stmt = $pdo->prepare("
     SELECT 
         m.ticket_id as id,
@@ -39,9 +41,9 @@ $stmt = $pdo->prepare("
         m.instructions as notes
     FROM maintenance_tickets m
     LEFT JOIN vehicles v ON m.vehicle_id = v.fleet_id
-    WHERE m.ticket_id = ? OR m.id = ?
+    WHERE $stmt_col = ?
 ");
-$stmt->execute([$ticket_id, $ticket_id]);
+$stmt->execute([$ticket_id]);
 $db_ticket = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$db_ticket) {
@@ -57,14 +59,6 @@ if ($status === 'cancelled') {
     $status = 'overdue';
 }
 
-$typeMap = [
-    'preventive' => 'Preventive Maintenance (PM)',
-    'repair'     => 'Corrective Repair',
-    'inspection' => 'Safety / DOT Inspection',
-    'tires'      => 'Tire Replacement & Alignment',
-    'oil'        => 'Oil & Fluid Change'
-];
-
 $total_cost = (float)$db_ticket['total_cost'];
 $parts_cost = $total_cost * 0.65;
 $labor_cost = $total_cost * 0.35;
@@ -75,7 +69,7 @@ $ticket = [
     'vehicle_model' => $db_ticket['vehicle_model'] ?: 'Unknown Model',
     'plate'         => $db_ticket['plate'] ?: '---',
     'odometer'      => number_format($db_ticket['odometer']),
-    'type'          => $typeMap[$db_ticket['type']] ?? ucfirst($db_ticket['type']),
+    'type'          => $db_ticket['type'] ?? ucfirst($db_ticket['type']),
     'status'        => $status,
     'date'          => $db_ticket['date'],
     'workshop'      => $db_ticket['workshop'],

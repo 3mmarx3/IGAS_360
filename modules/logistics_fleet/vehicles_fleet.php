@@ -24,9 +24,8 @@ $total_vehicles = array_sum($stats);
 $utilization = $total_vehicles > 0 ? round((($in_transit + $available) / $total_vehicles) * 100, 1) : 0;
 
 $stmt_fleet = $pdo->query("
-    SELECT v.*, d.full_name as driver_name, d.driver_id as d_ref 
+    SELECT v.* 
     FROM vehicles v 
-    LEFT JOIN drivers d ON v.driver_id = d.driver_id OR v.driver_id = d.id 
     ORDER BY v.created_at DESC
 ");
 $fleet_data = $stmt_fleet->fetchAll(PDO::FETCH_ASSOC);
@@ -120,7 +119,7 @@ $vehicle_type_map = [
                 <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2" style="color: var(--mute);">Logistics & Fleet</p>
                     <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Vehicles Fleet</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Manage company vehicles, operational status, and driver assignments.</p>
+                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Manage company vehicles and operational status.</p>
                 </div>
                 <div class="flex gap-3">
                     <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
@@ -203,7 +202,6 @@ $vehicle_type_map = [
                             <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft);">
                                 <th class="pl-6 pr-2 py-3 font-medium w-8"><span class="checkbox-sq"></span></th>
                                 <th class="px-3 py-3 font-medium">Fleet ID</th>
-                                <th class="px-3 py-3 font-medium">Assigned Driver</th>
                                 <th class="px-3 py-3 font-medium">Plate Number</th>
                                 <th class="px-3 py-3 font-medium">Vehicle Details</th>
                                 <th class="px-3 py-3 font-medium">Max Capacity</th>
@@ -228,28 +226,11 @@ $vehicle_type_map = [
                                 }
 
                                 $display_type = $vehicle_type_map[$v['vehicle_type']] ?? ucfirst($v['vehicle_type']);
-                                $driver_id_to_pass = $v['d_ref'] ?? $v['driver_id'];
-                                $driver_name_display = $v['driver_name'] ?: 'Driver #'.$v['driver_id'];
                             ?>
                             <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
                                 <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
                                 <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($v['fleet_id']) ?></td>
                                 
-                                <td class="px-3 py-3.5">
-                                    <?php if($v['driver_id'] === 'unassigned' || empty($v['driver_id'])): ?>
-                                        <span class="text-[12px] italic" style="color: var(--mute-soft);">Unassigned</span>
-                                    <?php else: ?>
-                                        <a href="driver_profile.php?id=<?= urlencode($driver_id_to_pass) ?>" class="flex items-center gap-2" style="text-decoration: none;">
-                                            <span class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-600">
-                                                <i data-lucide="user" class="w-3.5 h-3.5"></i>
-                                            </span>
-                                            <span class="font-medium" style="color: <?= $rowColor ?>; border-bottom: 1px solid transparent; transition: border-color 0.15s ease;" onmouseover="this.style.borderColor='var(--accent)'; this.style.color='var(--accent)'" onmouseout="this.style.borderColor='transparent'; this.style.color='<?= $rowColor ?>'">
-                                                <?= htmlspecialchars($driver_name_display) ?>
-                                            </span>
-                                        </a>
-                                    <?php endif; ?>
-                                </td>
-
                                 <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--ink); border: 1px solid var(--line-soft); display: inline-block; padding: 2px 8px; margin-top: 8px; background: white; border-radius: 2px;">
                                     <?= htmlspecialchars($v['plate_number']) ?>
                                 </td>
@@ -285,7 +266,7 @@ $vehicle_type_map = [
                             <?php endforeach; ?>
                             <?php if (empty($fleet_data)): ?>
                             <tr>
-                                <td colspan="8" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No vehicles found in the registry.</td>
+                                <td colspan="7" class="px-6 py-8 text-center text-[13.5px]" style="color: var(--mute);">No vehicles found in the registry.</td>
                             </tr>
                             <?php endif; ?>
                         </tbody>
