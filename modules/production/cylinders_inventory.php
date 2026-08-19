@@ -5,10 +5,21 @@ require_once '../../config/db.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
     $sku_to_delete = $_POST['sku'] ?? '';
     if (!empty($sku_to_delete)) {
-        $delStmt = $pdo->prepare("DELETE FROM cylinder_batches WHERE sku = ?");
-        $delStmt->execute([$sku_to_delete]);
-        header("Location: cylinders_inventory.php");
-        exit;
+        try {
+            $pdo->beginTransaction();
+            
+            $delCyl = $pdo->prepare("DELETE FROM cylinders WHERE sku = ?");
+            $delCyl->execute([$sku_to_delete]);
+
+            $delBatch = $pdo->prepare("DELETE FROM cylinder_batches WHERE sku = ?");
+            $delBatch->execute([$sku_to_delete]);
+
+            $pdo->commit();
+            header("Location: cylinders_inventory.php");
+            exit;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+        }
     }
 }
 

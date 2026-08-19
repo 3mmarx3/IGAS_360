@@ -544,5 +544,8 @@ $ss = $statusStyles[$supplier['status']] ?? $statusStyles['pending'];
         }
     }
 </script>
+
+
+
 </body>
 </html>

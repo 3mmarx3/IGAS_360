@@ -3,73 +3,68 @@ session_start();
 require_once '../../config/db.php';
 
 $active_page = 'cylinders_inventory';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Production', 'Cylinders Inventory', 'New Batch Registration'];
+$base_url    = '../../';$breadcrumb  = ['I-GAS', 'Production', 'Cylinders Inventory', 'New Batch Registration'];
 
 $new_batch_id = 'BAT-' . rand(8000, 8999);
 
-$suppliersStmt = $pdo->query("SELECT id, company_name FROM partners WHERE partner_type = 'supplier' AND status = 'approved' ORDER BY company_name ASC");
-$suppliers = $suppliersStmt->fetchAll(PDO::FETCH_ASSOC);
+$suppliersStmt =$pdo->query("SELECT id, company_name FROM partners WHERE partner_type = 'supplier' AND status = 'approved' ORDER BY company_name ASC");
+$suppliers =$suppliersStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$gasesStmt = $pdo->query("SELECT DISTINCT gas_classification FROM cylinder_batches WHERE gas_classification IS NOT NULL AND gas_classification != '' ORDER BY gas_classification ASC");
-$dbGases = $gasesStmt->fetchAll(PDO::FETCH_COLUMN);
+$dbGases = [
+    'Industrial Gases',
+    'Medical Gases',
+    'Fuel Gases',
+    'Specialty Gases',
+    'Gas Mixtures',
+    'Oxygen',
+    'Nitrogen',
+    'Argon',
+    'Carbon Dioxide',
+    'Helium',
+    'Acetylene'
+];
 
-$volsStmt = $pdo->query("SELECT DISTINCT volume FROM cylinder_batches WHERE volume IS NOT NULL AND volume != '' ORDER BY volume ASC");
-$dbVolumes = $volsStmt->fetchAll(PDO::FETCH_COLUMN);
+$dbVolumes = ['10L', '20L', '40L', '50L', '100L'];
 
-$error_message = '';
-$success_message = '';
+$error_message = '';$success_message = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $gas_classification = $_POST['gas_classification'] ?? '';
-    $volume             = $_POST['volume'] ?? '';
-    $build_material     = $_POST['build_material'] ?? '';
-    $valve_spec         = $_POST['valve_spec'] ?? '';
-    $color_coding       = $_POST['color_coding'] ?? '';
-    $quantity           = (int)($_POST['quantity'] ?? 0);
-    $supplier_id        = !empty($_POST['supplier_id']) ? (int)$_POST['supplier_id'] : null;
-    $po_ref             = $_POST['po_ref'] ?? '';
-    $mfg_date           = $_POST['mfg_date'] ?? '';
-    $batch_number       = $_POST['batch_number'] ?? $new_batch_id;
-    $sku                = $_POST['sku'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {$gas_classification = $_POST['gas_classification'] ?? '';$volume             = $_POST['volume'] ?? '';$build_material     = $_POST['build_material'] ?? '';$valve_spec         = $_POST['valve_spec'] ?? '';$color_coding       = $_POST['color_coding'] ?? '';$quantity           = (int)($_POST['quantity'] ?? 0);$supplier_id        = !empty($_POST['supplier_id']) ? (int)$_POST['supplier_id'] : null;
+    $po_ref             = $_POST['po_ref'] ?? '';$mfg_date           = $_POST['mfg_date'] ?? '';$batch_number       = $_POST['batch_number'] ?? $new_batch_id;
+    $sku                =$_POST['sku'] ?? '';
     $working_pressure   = (int)($_POST['working_pressure'] ?? 0);
     $test_pressure      = (int)($_POST['test_pressure'] ?? 0);
-    $initial_test_date  = $_POST['initial_test_date'] ?? '';
-    $next_test_due      = $_POST['next_test_due'] ?? '';
+    $initial_test_date  =$_POST['initial_test_date'] ?? '';
+    $next_test_due      =$_POST['next_test_due'] ?? '';
 
-    if (empty($sku) || $quantity <= 0) {
-        $error_message = "يرجى تعبئة جميع الحقول الأساسية بشكل صحيح.";
+    if (empty($sku) || $quantity <= 0) {$error_message = "يرجى تعبئة جميع الحقول الأساسية بشكل صحيح.";
     } else {
         try {
             $pdo->beginTransaction();
 
-            $batchStmt = $pdo->prepare("
+            $batchStmt =$pdo->prepare("
                 INSERT INTO cylinder_batches 
                 (batch_number, sku, gas_classification, volume, build_material, valve_spec, color_coding, quantity, supplier_id, po_ref, mfg_date, working_pressure, test_pressure, initial_test_date, next_test_due) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $batchStmt->execute([
-                $batch_number, $sku, $gas_classification, $volume, $build_material, $valve_spec, $color_coding, 
-                $quantity, $supplier_id, $po_ref, $mfg_date, $working_pressure, $test_pressure, $initial_test_date, $next_test_due
+            $batchStmt->execute([$batch_number, $sku,$gas_classification, $volume,$build_material, $valve_spec,$color_coding, 
+                $quantity,$supplier_id, $po_ref,$mfg_date, $working_pressure,$test_pressure, $initial_test_date,$next_test_due
             ]);
 
-            $batch_id = $pdo->lastInsertId();
+            $batch_id =$pdo->lastInsertId();
 
-            $cylStmt = $pdo->prepare("
+            $cylStmt =$pdo->prepare("
                 INSERT INTO cylinders (barcode, batch_id, sku, status) 
                 VALUES (?, ?, ?, 'in_plant')
             ");
 
-            for ($i = 1; $i <= $quantity; $i++) {
-                $barcode = $batch_number . '-' . str_pad($i, 4, '0', STR_PAD_LEFT);
-                $cylStmt->execute([$barcode, $batch_id, $sku]);
+            for ($i = 1; $i <=$quantity; $i++) {$barcode = $batch_number . '-' . str_pad($i, 4, '0', STR_PAD_LEFT);
+                $cylStmt->execute([$barcode, $batch_id,$sku]);
             }
 
             $pdo->commit();
             $success_message = "تم تسجيل عدد {$quantity} أسطوانة بنجاح وتوليد الباركود الخاص بها.";
             $new_batch_id = 'BAT-' . rand(8000, 8999);
-        } catch (Exception $e) {
-            $pdo->rollBack();
+        } catch (Exception $e) {$pdo->rollBack();
             $error_message = "حدث خطأ أثناء التسجيل: " . $e->getMessage();
         }
     }
@@ -195,7 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <?php endif; ?>
 
-            <form action="new_batch_registration.php" method="POST" id="batch-form">
+            <form action="new_cylinder.php" method="POST" id="batch-form">
                 <input type="hidden" name="batch_number" value="<?= htmlspecialchars($new_batch_id) ?>">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     
@@ -364,7 +359,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'Nitrogen': 'N2',
                 'Helium': 'HE',
                 'Carbon Dioxide': 'CO2',
-                'Mixed Gas': 'MX'
+                'Mixed Gas': 'MX',
+                'Industrial Gases': 'IND',
+                'Medical Gases': 'MED',
+                'Fuel Gases': 'FUEL',
+                'Specialty Gases': 'SPEC',
+                'Gas Mixtures': 'MIX'
             };
             
             const gas = gasSelect.value;
@@ -373,7 +373,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if(gas && vol) {
                 let prefix = gasMap[gas];
                 if (!prefix) {
-                    prefix = gas.substring(0, 2).toUpperCase();
+                    prefix = gas.substring(0, 3).toUpperCase();
                 }
                 skuInput.value = 'CYL-' + prefix + '-' + vol;
             } else {

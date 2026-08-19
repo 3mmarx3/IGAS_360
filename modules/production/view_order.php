@@ -13,7 +13,7 @@ if (empty($order_num)) {
 $stmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE order_number = ?");
 $stmt->execute([$order_num]);
 $order = $stmt->fetch();
-
+ 
 if (!$order) {
     die("Order not found in system.");
 }
