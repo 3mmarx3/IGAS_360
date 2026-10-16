@@ -1,280 +1,329 @@
 <?php
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission('clients.edit');
+
 $active_page = 'client_contracts';
-$breadcrumb  = ['I-GAS', 'CRM & Sales', 'Client Contracts', 'Renew Contract'];
+$breadcrumb = ['I-GAS', 'CRM & Sales', 'Client Contracts', 'Renew Contract'];
 
-$contract_id = isset($_GET['id']) ? $_GET['id'] : 'CTR-7044';
+$contract_param = $_GET['id'] ?? '';
+if (empty($contract_param)) {
+  $firstId = $pdo->query("SELECT id FROM client_contracts ORDER BY id ASC LIMIT 1")->fetchColumn();
+  if (!empty($firstId)) {
+    $contract_param = (string)$firstId;
+  } else {
+    redirect('modules/crm_sales/client_contracts.php');
+  }
+}
 
-$current_contract = [
-    'id' => $contract_id,
-    'client' => 'Air Product Co.',
-    'gas_type' => 'C₂H₂ 40L',
-    'current_quota' => '500',
-    'unit' => 'cylinders',
-    'start_date' => '2024-06-01',
-    'end_date' => '2026-07-15',
-    'value' => 1250000,
-    'payment_terms' => 'net30'
-];
+$stmt = $pdo->prepare("
+  SELECT c.*, p.company_name, p.sales_rep_id, p.assigned_to
+  FROM client_contracts c
+  JOIN partners p ON c.client_id = p.id
+  WHERE c.id = :id OR c.contract_number = :ref
+  LIMIT 1
+");
+$stmt->execute(['id' => (int)$contract_param, 'ref' => $contract_param]);
+$contract = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$contract) {
+  redirect('modules/crm_sales/client_contracts.php');
+}
+
+if (!check_record_ownership($pdo, 'partners', $contract['client_id'], 'assigned_to') && !check_record_ownership($pdo, 'partners', $contract['client_id'], 'sales_rep_id')) {
+  redirect('modules/crm_sales/client_contracts.php?error=unauthorized');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  require_csrf();
+  $new_end_date = trim($_POST['end_date'] ?? $contract['end_date']);
+  $new_quota = trim($_POST['monthly_quota'] ?? $contract['monthly_quota']);
+  $unit = trim($_POST['unit'] ?? $contract['unit']);
+  $contract_value = (float)($_POST['contract_value'] ?? $contract['contract_value']);
+  $payment_terms = trim($_POST['payment_terms'] ?? $contract['payment_terms']);
+  $notes = trim($_POST['notes'] ?? $contract['notes']);
+
+  $upd = $pdo->prepare("
+    UPDATE client_contracts
+    SET end_date = :end_date,
+      monthly_quota = :monthly_quota,
+      unit = :unit,
+      contract_value = :contract_value,
+      payment_terms = :payment_terms,
+      notes = :notes,
+      status = 'active'
+    WHERE id = :id
+  ");
+  $upd->execute([
+    ':end_date' => $new_end_date,
+    ':monthly_quota' => $new_quota,
+    ':unit' => $unit,
+    ':contract_value' => $contract_value,
+    ':payment_terms' => $payment_terms,
+    ':notes' => $notes,
+    ':id' => $contract['id']
+  ]);
+
+  redirect('modules/crm_sales/contract_details.php?id=' . $contract['id'] . '&renewed=1');
+}
+
+// Calculate proposed renewal date (+1 year from current end_date)
+$current_end = new DateTime($contract['end_date'] ?? 'now');
+$proposed_end = (clone $current_end)->modify('+1 year')->format('Y-m-d');
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars($_SESSION['lang'] ?? 'en') ?>" dir="<?= ($_SESSION['lang'] ?? 'en') === 'ar' ? 'rtl' : 'ltr' ?>" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Renew Contract | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
-        }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
-        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-        .nav-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
-
-        .card {
-            background: var(--paper);
-            border: 1px solid var(--line-soft);
-        }
-
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary {
-            background: var(--paper); color: var(--ink); border: 1px solid var(--line);
-            transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center;
-        }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-
-        .form-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--mute); margin-bottom: 6px; }
-        .form-input {
-            width: 100%; background: var(--paper); border: 1px solid var(--line); border-radius: 2px;
-            padding: 8px 12px; font-size: 13.5px; color: var(--ink); transition: border-color 0.15s ease;
-        }
-        .form-input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
-        .form-input:disabled, .form-input.readonly { background: var(--paper-deep); color: var(--mute); cursor: not-allowed; border-color: var(--line-soft); }
-        
-        .badge-warning { background: #FBF3DF; color: #7A5E1E; padding: 2px 6px; border-radius: 2px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Renew Contract <?= htmlspecialchars($contract['contract_number']) ?> | I-GAS Enterprise</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="<?= app_url('assets/css/theme.css') ?>">
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+  <?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-    <?php include '../../includes/header.php'; ?>
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
+    <!-- Telemetry Status Bar -->
+    <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 sm:px-6 flex items-center justify-between text-xs font-mono text-slate-400">
+      <div class="flex items-center gap-4 overflow-x-auto no-scrollbar">
+        <span class="flex items-center gap-1.5 font-medium text-teal-400 dark:text-teal-400">
+          <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+          <span data-en="RENEWAL ENGINE" data-ar="محرك تجديد العقود">RENEWAL ENGINE</span>
+        </span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span data-en="CYCLE EXTENSION" data-ar="تمديد الدورة التعاقدية">CYCLE EXTENSION</span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span class="font-mono text-neutral-500">REF: <?= htmlspecialchars($contract['contract_number']) ?></span>
+      </div>
+      <div class="hidden sm:flex items-center gap-3">
+        <span class="text-[11px] text-neutral-400">PLANT — JEDDAH HUB</span>
+      </div>
+    </div>
+
+    <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
+      <!-- Header Row -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2 mb-1.5">
+            <a href="<?= app_url('modules/crm_sales/client_contracts.php') ?>" class="text-xs font-mono text-neutral-500 hover:text-teal-600 dark:hover:text-teal-400 transition-colors inline-flex items-center gap-1">
+              <i data-lucide="arrow-left" class="w-3.5 h-3.5 rtl:rotate-180"></i>
+              <span data-en="Master Contracts" data-ar="العقود الرئيسية">Master Contracts</span>
+            </a>
+            <span class="text-neutral-300 dark:text-neutral-700">/</span>
+            <a href="<?= app_url('modules/crm_sales/contract_details.php?id=' . urlencode((string)$contract['id'])) ?>" class="text-xs font-mono text-neutral-500 hover:underline">
+              <?= htmlspecialchars($contract['contract_number']) ?>
+            </a>
+            <span class="text-neutral-300 dark:text-neutral-700">/</span>
+            <span class="text-xs font-mono text-neutral-400" data-en="Renewal" data-ar="تجديد">Renewal</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <h1 class="text-2xl font-bold font-mono tracking-tight text-white">
+              <?= htmlspecialchars($contract['contract_number']) ?>
+            </h1>
+            <span class="px-2.5 py-0.5 text-xs font-mono font-medium rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400 dark:text-amber-400 inline-flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              <span data-en="Renewal Pending" data-ar="قيد التجديد">Renewal Pending</span>
             </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
-            <span class="ml-auto text-[11px] mono uppercase tracking-wide" style="color: var(--mute-soft);">v2.4.1</span>
+            <?php if (!empty($contract['gas_type'])): ?>
+              <?= gas_chip($contract['gas_type']) ?>
+            <?php endif; ?>
+          </div>
+          <p class="text-xs text-neutral-500 mt-1">
+            <span data-en="Client:" data-ar="العميل:">Client:</span> <span class="font-medium text-slate-200"><?= htmlspecialchars($contract['company_name']) ?></span>
+          </p>
         </div>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
+        <div class="flex items-center gap-3">
+          <a href="<?= app_url('modules/crm_sales/contract_details.php?id=' . urlencode((string)$contract['id'])) ?>" class="px-4 py-2 text-xs font-medium border border-[#234257] bg-[#112433] hover:bg-[#173042] text-slate-200 rounded-md transition-colors">
+            <span data-en="Cancel" data-ar="إلغاء">Cancel</span>
+          </a>
+          <!-- Single Primary CTA: Safety Valve Orange -->
+          <button type="submit" form="renewForm" class="btn-cta-orange px-5 py-2 text-xs font-semibold rounded-md inline-flex items-center gap-2 transition-all">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            <span data-en="Confirm & Execute Renewal" data-ar="تأكيد وتنفيذ التجديد">Confirm & Execute Renewal</span>
+          </button>
+        </div>
+      </div>
 
-            <div class="flex justify-between items-end mb-7">
+      <form id="renewForm" action="" method="POST" class="space-y-6">
+        <?= csrf_field() ?>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Left: Form Sections (2 cols) -->
+          <div class="lg:col-span-2 space-y-6">
+            <!-- Current Baseline Snapshot -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 border-s-4 border-s-[#f97316]">
+              <div class="flex items-center justify-between mb-4">
                 <div>
-                    <div class="flex items-center gap-2 mb-2">
-                        <a href="client_contracts.php" class="text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors" style="color: var(--mute); hover:color: var(--ink);">Contracts</a>
-                        <i data-lucide="chevron-right" class="w-3 h-3 text-[var(--mute-soft)]"></i>
-                        <span class="text-[11px] font-semibold uppercase tracking-[0.14em]" style="color: var(--ink);">Renewal Operations</span>
-                    </div>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none flex items-center gap-3" style="color: var(--ink);">
-                        Renewing <?= htmlspecialchars($current_contract['id']) ?>
-                        <span class="badge-warning">Expiring Soon</span>
-                    </h2>
+                  <h2 class="text-sm font-semibold text-white" data-en="1. Current Term Baseline Snapshot" data-ar="1. لقطة خط الأساس للمدة الحالية">
+                    1. Current Term Baseline Snapshot
+                  </h2>
+                  <p class="text-xs text-neutral-500" data-en="Existing contract terms prior to extension." data-ar="شروط العقد الحالية قبل التمديد.">
+                    Existing contract terms prior to extension.
+                  </p>
                 </div>
-                <div class="flex gap-3">
-                    <a href="client_contracts.php" class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
-                        Cancel
-                    </a>
-                    <button class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
-                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>Confirm Renewal
-                    </button>
+                <span class="px-2 py-0.5 text-[11px] font-mono rounded bg-[#09151f] text-neutral-500 border border-[#1e3a50]">
+                  READ ONLY
+                </span>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+                <div class="p-3 rounded bg-[#09151f] border border-[#1a3346]">
+                  <span class="text-neutral-500 block mb-1" data-en="Client Name" data-ar="اسم العميل">Client Name</span>
+                  <span class="font-bold font-sans text-white text-sm"><?= htmlspecialchars($contract['company_name']) ?></span>
                 </div>
+                <div class="p-3 rounded bg-[#09151f] border border-[#1a3346]">
+                  <span class="text-neutral-500 block mb-1" data-en="Gas Product" data-ar="منتج الغاز">Gas Product</span>
+                  <span class="font-bold text-white"><?= htmlspecialchars($contract['gas_type']) ?></span>
+                </div>
+                <div class="p-3 rounded bg-[#09151f] border border-[#1a3346]">
+                  <span class="text-neutral-500 block mb-1" data-en="Current Expiration" data-ar="تاريخ الانتهاء الحالي">Current Expiration</span>
+                  <span class="font-bold text-rose-600 dark:text-rose-400"><?= htmlspecialchars($contract['end_date']) ?></span>
+                </div>
+                <div class="p-3 rounded bg-[#09151f] border border-[#1a3346]">
+                  <span class="text-neutral-500 block mb-1" data-en="Monthly Quota & Volume" data-ar="الحصة والحجم الشهري">Monthly Quota & Volume</span>
+                  <span class="font-bold text-white"><?= number_format((float)($contract['monthly_quota'] ?? 0)) ?> <?= htmlspecialchars($contract['unit'] ?? '') ?></span>
+                </div>
+              </div>
             </div>
 
-            <form action="#" method="POST">
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    
-                    <div class="lg:col-span-2 flex flex-col gap-6">
-                        
-                        <div class="card rounded-md p-6">
-                            <h3 class="text-[15px] font-semibold tracking-tight mb-5 pb-4 border-b flex justify-between items-center" style="color: var(--ink); border-color: var(--line-soft);">
-                                <span>1. Current Contract Snapshot</span>
-                                <span class="text-[11px] font-normal uppercase tracking-wider" style="color: var(--mute);">Read Only</span>
-                            </h3>
-                            
-                            <div class="grid grid-cols-2 gap-5">
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Client Account</label>
-                                    <input type="text" class="form-input readonly" value="<?= htmlspecialchars($current_contract['client']) ?>" disabled>
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Gas Type</label>
-                                    <input type="text" class="form-input readonly mono" value="<?= htmlspecialchars($current_contract['gas_type']) ?>" disabled>
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Current Expiration</label>
-                                    <input type="text" class="form-input readonly mono num" value="<?= htmlspecialchars($current_contract['end_date']) ?>" disabled>
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Current Monthly Quota</label>
-                                    <input type="text" class="form-input readonly mono num" value="<?= htmlspecialchars($current_contract['current_quota'] . ' ' . ucfirst($current_contract['unit'])) ?>" disabled>
-                                </div>
-                            </div>
-                        </div>
+            <!-- Renewal Parameters -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 border-s-4 border-s-[#f97316]">
+              <h2 class="text-sm font-semibold text-white mb-1" data-en="2. Extension & Revised Quotas" data-ar="2. التمديد والحصص المعدلة">
+                2. Extension & Revised Quotas
+              </h2>
+              <p class="text-xs text-neutral-500 mb-5" data-en="Update expiry date, adjust volume allocations, and set new financial threshold." data-ar="حدّث تاريخ الانتهاء واضبط مخصصات الحجم وحدد السقف المالي الجديد.">
+                Update expiry date, adjust volume allocations, and set new financial threshold.
+              </p>
 
-                        <div class="card rounded-md p-6 border-l-4" style="border-left-color: var(--ink);">
-                            <h3 class="text-[15px] font-semibold tracking-tight mb-5 pb-4 border-b" style="color: var(--ink); border-color: var(--line-soft);">2. Renewal Parameters</h3>
-                            
-                            <div class="grid grid-cols-3 gap-5">
-                                <div class="col-span-3 md:col-span-1">
-                                    <label class="form-label">New Effective Date</label>
-                                    <input type="date" class="form-input mono num" value="<?= htmlspecialchars($current_contract['end_date']) ?>">
-                                </div>
-                                <div class="col-span-3 md:col-span-1">
-                                    <label class="form-label">New Expiration Date</label>
-                                    <input type="date" class="form-input mono num" value="2027-07-15">
-                                </div>
-                                <div class="col-span-3 md:col-span-1">
-                                    <label class="form-label">Renewal Period</label>
-                                    <select class="form-input mono">
-                                        <option value="12">12 Months</option>
-                                        <option value="24">24 Months</option>
-                                        <option value="36">36 Months</option>
-                                        <option value="custom">Custom</option>
-                                    </select>
-                                </div>
-
-                                <div class="col-span-3 border-t mt-2 pt-5" style="border-color: var(--line-soft);"></div>
-
-                                <div class="col-span-3 md:col-span-1">
-                                    <label class="form-label">Adjusted Monthly Quota</label>
-                                    <input type="number" class="form-input mono num" value="<?= htmlspecialchars($current_contract['current_quota']) ?>">
-                                </div>
-                                <div class="col-span-3 md:col-span-1">
-                                    <label class="form-label">Measurement Unit</label>
-                                    <select class="form-input mono">
-                                        <option value="cylinders" <?= $current_contract['unit'] == 'cylinders' ? 'selected' : '' ?>>Cylinders</option>
-                                        <option value="tons" <?= $current_contract['unit'] == 'tons' ? 'selected' : '' ?>>Metric Tons (MT)</option>
-                                    </select>
-                                </div>
-                                <div class="col-span-3 md:col-span-1">
-                                    <label class="form-label">New Contract Value (SAR)</label>
-                                    <input type="number" class="form-input mono num text-[15px] font-semibold" value="<?= htmlspecialchars($current_contract['value']) ?>" style="color: var(--ink);">
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card rounded-md p-6">
-                            <h3 class="text-[15px] font-semibold tracking-tight mb-5 pb-4 border-b" style="color: var(--ink); border-color: var(--line-soft);">3. Updated Conditions</h3>
-                            
-                            <div>
-                                <label class="form-label">Renewal Remarks & Adjustments</label>
-                                <textarea class="form-input" rows="3" placeholder="Note any changes in pricing, delivery schedules, or special agreements for this renewal cycle..."></textarea>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <div class="lg:col-span-1 flex flex-col gap-6">
-                        
-                        <div class="card rounded-md p-6">
-                            <h3 class="text-[15px] font-semibold tracking-tight mb-5 pb-4 border-b" style="color: var(--ink); border-color: var(--line-soft);">Billing Updates</h3>
-                            
-                            <div class="flex flex-col gap-5">
-                                <div>
-                                    <label class="form-label">Payment Terms</label>
-                                    <select class="form-input mono">
-                                        <option value="net30" <?= $current_contract['payment_terms'] == 'net30' ? 'selected' : '' ?>>Net 30 Days</option>
-                                        <option value="net60" <?= $current_contract['payment_terms'] == 'net60' ? 'selected' : '' ?>>Net 60 Days</option>
-                                        <option value="cod" <?= $current_contract['payment_terms'] == 'cod' ? 'selected' : '' ?>>Cash on Delivery (COD)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="form-label">Price Indexing</label>
-                                    <select class="form-input mono">
-                                        <option value="fixed">Fixed Price</option>
-                                        <option value="variable">Market Variable</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card rounded-md p-6" style="background: var(--paper-deep);">
-                            <h3 class="text-[13.5px] font-semibold tracking-tight mb-3" style="color: var(--ink);">Impact Summary</h3>
-                            <ul class="text-[12.5px] flex flex-col gap-3 mb-5" style="color: var(--mute);">
-                                <li class="flex justify-between items-center border-b pb-2" style="border-color: var(--line-soft);">
-                                    <span>Quota Change</span>
-                                    <span class="mono num" style="color: var(--ink);">0%</span>
-                                </li>
-                                <li class="flex justify-between items-center border-b pb-2" style="border-color: var(--line-soft);">
-                                    <span>Value Delta</span>
-                                    <span class="mono num" style="color: var(--ink);">+0.00 SAR</span>
-                                </li>
-                                <li class="flex justify-between items-center border-b pb-2" style="border-color: var(--line-soft);">
-                                    <span>New End Date</span>
-                                    <span class="mono num font-medium" style="color: var(--ink);">2027-07-15</span>
-                                </li>
-                            </ul>
-                            <div class="flex items-center gap-2 mb-4">
-                                <input type="checkbox" id="notify" class="w-4 h-4 border-gray-300 rounded" checked>
-                                <label for="notify" class="text-[12px]" style="color: var(--mute);">Notify client billing department automatically</label>
-                            </div>
-                            <button class="w-full btn-secondary py-2.5 rounded-sm text-[13.5px] font-medium border-dashed border-2">
-                                Recalculate Totals
-                            </button>
-                        </div>
-
-                    </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div class="sm:col-span-1">
+                  <label class="block text-xs font-mono font-medium text-slate-300 mb-1.5">
+                    <span data-en="Current Expiration" data-ar="الانتهاء الحالي">Current Expiration</span>
+                  </label>
+                  <input type="date" value="<?= htmlspecialchars($contract['end_date']) ?>" disabled class="w-full bg-[#09151f] border border-[#1e3a50] rounded px-3 py-2 text-xs font-mono text-neutral-500 cursor-not-allowed">
                 </div>
-            </form>
 
+                <div class="sm:col-span-1">
+                  <label class="block text-xs font-mono font-medium text-slate-300 mb-1.5">
+                    <span data-en="New Expiration Date" data-ar="تاريخ الانتهاء الجديد">New Expiration Date</span> *
+                  </label>
+                  <input type="date" name="end_date" id="renewEndDate" value="<?= htmlspecialchars($proposed_end) ?>" required class="w-full bg-[#0c1924] border border-[#1e3a50] rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-600">
+                </div>
+
+                <div class="sm:col-span-1">
+                  <label class="block text-xs font-mono font-medium text-slate-300 mb-1.5">
+                    <span data-en="Measurement Unit" data-ar="وحدة القياس">Measurement Unit</span>
+                  </label>
+                  <select name="unit" class="w-full bg-[#08131c] border border-[#1e3a50] rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-600">
+                    <option value="cylinders" <?= strtolower($contract['unit'] ?? '') == 'cylinders' ? 'selected' : '' ?>>Cylinders (أسطوانات)</option>
+                    <option value="mt" <?= in_array(strtolower($contract['unit'] ?? ''), ['tons', 'mt']) ? 'selected' : '' ?>>Metric Tons / MT (طن متري)</option>
+                    <option value="m³" <?= strtolower($contract['unit'] ?? '') == 'm³' ? 'selected' : '' ?>>Cubic Meters / m³ (متر مكعب)</option>
+                    <option value="liters" <?= strtolower($contract['unit'] ?? '') == 'liters' ? 'selected' : '' ?>>Liters (لتر)</option>
+                  </select>
+                </div>
+
+                <div class="sm:col-span-1">
+                  <label class="block text-xs font-mono font-medium text-slate-300 mb-1.5">
+                    <span data-en="Adjusted Monthly Quota" data-ar="الحصة الشهرية المعدلة">Adjusted Monthly Quota</span> *
+                  </label>
+                  <input type="text" name="monthly_quota" value="<?= htmlspecialchars($contract['monthly_quota']) ?>" required class="w-full bg-[#0c1924] border border-[#1e3a50] rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-600">
+                </div>
+
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-mono font-medium text-slate-300 mb-1.5">
+                    <span data-en="New Total Contract Ceiling (SAR)" data-ar="السقف المالي الجديد للعقد (ر.س)">New Total Contract Ceiling (SAR)</span> *
+                  </label>
+                  <input type="number" step="0.01" name="contract_value" value="<?= htmlspecialchars($contract['contract_value']) ?>" required class="w-full bg-[#0c1924] border border-[#1e3a50] rounded px-3 py-2 text-sm font-mono font-bold text-white focus:outline-none focus:border-teal-600">
+                </div>
+              </div>
+            </div>
+
+            <!-- Special Remarks & Amendment Clauses -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 border-s-4 border-s-[#f97316]">
+              <h2 class="text-sm font-semibold text-white mb-1" data-en="3. Renewal Addendum & Contract Amendments" data-ar="3. ملحق التجديد وتعديلات البنود">
+                3. Renewal Addendum & Contract Amendments
+              </h2>
+              <p class="text-xs text-neutral-500 mb-4" data-en="Note any pricing formula shifts, emergency dispatch amendments, or delivery location changes." data-ar="دوّن أي تغيير في صيغة التسعير أو تعديلات التوريد الطارئ أو مواقع التسليم.">
+                Note any pricing formula shifts, emergency dispatch amendments, or delivery location changes.
+              </p>
+              <textarea name="notes" rows="4" class="w-full bg-[#08131c] border border-[#1e3a50] rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-600" placeholder="Specify any amendments, tariff index adjustments, or revised SLA terms for this cycle..."><?= htmlspecialchars($contract['notes'] ?? '') ?></textarea>
+            </div>
+          </div>
+
+          <!-- Right: Settlement & Review (1 col) -->
+          <div class="space-y-6">
+            <!-- Settlement Terms -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 border-s-4 border-s-[#f97316]">
+              <h3 class="text-sm font-semibold text-white mb-4" data-en="Payment Settlement Terms" data-ar="شروط تسوية الفواتير">
+                Payment Settlement Terms
+              </h3>
+              <div>
+                <label class="block text-xs font-mono font-medium text-slate-300 mb-1.5">
+                  <span data-en="Updated Credit Window" data-ar="فترة الائتمان المحدثة">Updated Credit Window</span>
+                </label>
+                <select name="payment_terms" class="w-full bg-[#08131c] border border-[#1e3a50] rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-600">
+                  <option value="net30" <?= ($contract['payment_terms'] ?? '') == 'net30' ? 'selected' : '' ?>>Net 30 Days (30 يوماً)</option>
+                  <option value="net15" <?= ($contract['payment_terms'] ?? '') == 'net15' ? 'selected' : '' ?>>Net 15 Days (15 يوماً)</option>
+                  <option value="net45" <?= ($contract['payment_terms'] ?? '') == 'net45' ? 'selected' : '' ?>>Net 45 Days (45 يوماً)</option>
+                  <option value="net60" <?= ($contract['payment_terms'] ?? '') == 'net60' ? 'selected' : '' ?>>Net 60 Days (60 يوماً)</option>
+                  <option value="cod" <?= ($contract['payment_terms'] ?? '') == 'cod' ? 'selected' : '' ?>>Cash On Delivery / COD (نقداً)</option>
+                  <option value="prepaid" <?= ($contract['payment_terms'] ?? '') == 'prepaid' ? 'selected' : '' ?>>Prepaid In Advance (دفع مسبق)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Renewal Impact Preview -->
+            <div class="bg-[#09151f]/80 border border-[#1e3a50] rounded-md p-5 space-y-4">
+              <h4 class="text-xs font-mono uppercase tracking-wider text-neutral-500" data-en="Renewal Term Impact" data-ar="أثر تمديد العقد">
+                Renewal Term Impact
+              </h4>
+              <div class="space-y-2 text-xs font-mono">
+                <div class="flex justify-between py-1 border-b border-[#1e3a50]">
+                  <span class="text-neutral-500" data-en="Contract Ref:" data-ar="الرقم المرجعي:">Contract Ref:</span>
+                  <span class="font-bold text-white"><?= htmlspecialchars($contract['contract_number']) ?></span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-[#1e3a50]">
+                  <span class="text-neutral-500" data-en="New Expiration:" data-ar="الانتهاء الجديد:">New Expiration:</span>
+                  <span id="summaryNewEnd" class="font-bold text-teal-400 dark:text-teal-400"><?= htmlspecialchars($proposed_end) ?></span>
+                </div>
+                <div class="flex justify-between py-1">
+                  <span class="text-neutral-500" data-en="State on Save:" data-ar="الحالة بعد الحفظ:">State on Save:</span>
+                  <span class="font-bold text-teal-600">ACTIVE / NOMINAL</span>
+                </div>
+              </div>
+
+              <button type="submit" form="renewForm" class="w-full py-2 px-3 text-xs font-bold rounded bg-teal-800 hover:bg-teal-700 text-white transition-colors">
+                <span data-en="Execute Cycle Extension" data-ar="تنفيذ تمديد الدورة">Execute Cycle Extension</span>
+              </button>
+            </div>
+          </div>
         </div>
-    </main>
+      </form>
+    </div>
+  </main>
 
-    <script>
-        lucide.createIcons();
-    </script>
+  <script>
+    lucide.createIcons();
+
+    document.getElementById('renewEndDate')?.addEventListener('change', function(e) {
+      const el = document.getElementById('summaryNewEnd');
+      if (el) el.innerText = e.target.value;
+    });
+  </script>
 </body>
 </html>

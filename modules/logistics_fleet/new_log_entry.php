@@ -1,251 +1,285 @@
 <?php
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission($pdo, 'logistics.create');
 
 $active_page = 'vehicles_fleet';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Vehicles Fleet', 'Manual Log Entry'];
+$base_url  = '../../';
+$breadcrumb = ['I-GAS', 'Logistics & Fleet', 'Vehicles Fleet', 'Manual Log Entry'];
 
 $vehicle_id = $_GET['id'] ?? '';
 $error_msg = '';
 
 try {
-    $stmt_vehicles = $pdo->query("SELECT fleet_id, plate_number, make_model FROM vehicles ORDER BY fleet_id ASC");
-    $vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
+  $stmt_vehicles = $pdo->query("SELECT fleet_id, plate_number, make_model FROM vehicles ORDER BY fleet_id ASC");
+  $vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $vehicles = [];
+  $vehicles = [];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $fleet_id = $_POST['vehicle_id'] ?? '';
-    $event_type = $_POST['event_type'] ?? '';
-    $event_date = $_POST['event_date'] ?? '';
-    $event_time = $_POST['event_time'] ?? '';
-    $odometer = !empty($_POST['odometer']) ? (int)$_POST['odometer'] : 0;
-    $fuel_liters = !empty($_POST['fuel_liters']) ? (float)$_POST['fuel_liters'] : 0;
-    $event_cost = !empty($_POST['event_cost']) ? (float)$_POST['event_cost'] : 0;
-    $logged_by = trim($_POST['logged_by'] ?? '');
-    $description = trim($_POST['description'] ?? '');
+  require_csrf();
+  $fleet_id = $_POST['vehicle_id'] ?? '';
+  $event_type = $_POST['event_type'] ?? '';
+  $event_date = $_POST['event_date'] ?? '';
+  $event_time = $_POST['event_time'] ?? '';
+  $odometer = !empty($_POST['odometer']) ? (int)$_POST['odometer'] : 0;
+  $fuel_liters = !empty($_POST['fuel_liters']) ? (float)$_POST['fuel_liters'] : 0;
+  $event_cost = !empty($_POST['event_cost']) ? (float)$_POST['event_cost'] : 0;
+  $logged_by = trim($_POST['logged_by'] ?? '');
+  $description = trim($_POST['description'] ?? '');
 
-    if (empty($fleet_id) || empty($event_type) || empty($event_date) || empty($event_time) || empty($odometer)) {
-        $error_msg = "Please fill in all required fields.";
-    } else {
-        try {
-            $stmt = $pdo->prepare("
-                INSERT INTO vehicle_logs (fleet_id, event_type, event_date, event_time, odometer, fuel_liters, event_cost, logged_by, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([$fleet_id, $event_type, $event_date, $event_time, $odometer, $fuel_liters, $event_cost, $logged_by, $description]);
-            
-            header("Location: vehicle_logs.php?id=" . urlencode($fleet_id));
-            exit;
-        } catch (PDOException $e) {
-            $error_msg = "Error saving log entry: " . $e->getMessage();
-        }
+  if (empty($fleet_id) || empty($event_type) || empty($event_date) || empty($event_time) || empty($odometer)) {
+    $error_msg = "Please fill in all required telemetry fields (Vehicle, Type, Date, Time, Odometer).";
+  } else {
+    try {
+      $stmt = $pdo->prepare("
+        INSERT INTO vehicle_logs (fleet_id, event_type, event_date, event_time, odometer, fuel_liters, event_cost, logged_by, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ");
+      $stmt->execute([$fleet_id, $event_type, $event_date, $event_time, $odometer, $fuel_liters, $event_cost, $logged_by, $description]);
+      
+      header("Location: vehicle_logs.php?id=" . urlencode($fleet_id));
+      exit;
+    } catch (PDOException $e) {
+      $error_msg = "Error recording event: " . $e->getMessage();
     }
+  }
 }
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manual Log Entry | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
-        }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
-        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-
-        .card { background: var(--paper); border: 1px solid var(--line-soft); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-
-        .form-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mute); margin-bottom: 6px; }
-        .form-input, .form-select { width: 100%; border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); background: var(--paper); transition: border-color 0.15s ease; outline: none; }
-        .form-input:focus, .form-select:focus { border-color: var(--ink); }
-        .form-input::placeholder { color: var(--mute-soft); }
-        .form-input:disabled { background: var(--paper-deep); color: var(--mute); cursor: not-allowed; border-color: var(--line-soft); }
-
-        .input-group { position: relative; display: flex; align-items: center; }
-        .has-suffix { padding-right: 40px; }
-        .input-suffix { position: absolute; right: 12px; font-size: 12px; color: var(--mute); pointer-events: none; font-family: 'IBM Plex Mono', monospace; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-en="Record Vehicle Telemetry Event | I-GAS Control Room" data-ar="تسجيل حركة مركبة / قراءة عداد | غرفة التحكم I-GAS">Record Vehicle Telemetry Event | I-GAS Control Room</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="../../assets/css/theme.css">
+  <script>
+    (function() {
+      document.documentElement.classList.add('dark');
+      const savedLang = localStorage.getItem('app_lang') || 'en';
+      document.documentElement.lang = savedLang;
+      document.documentElement.dir = savedLang === 'ar' ? 'rtl' : 'ltr';
+    })();
+  </script>
+  <style>
+    .font-oxanium { font-family: 'Oxanium', 'Reem Kufi', sans-serif; }
+    .font-mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+  </style>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+<?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+<main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-    <?php include '../../includes/header.php'; ?>
+  <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
-            </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
+  <!-- Control Room Sub-Header / Telemetry Strip -->
+  <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 md:px-8 flex items-center justify-between text-xs font-mono shrink-0">
+    <div class="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
+      <span class="inline-flex items-center gap-1.5 text-slate-400">
+        <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+        <span data-en="LOGISTICS EVENT MANUAL JOURNAL ENTRY" data-ar="قيد يدوي لسجل أحداث الأسطول">LOGISTICS EVENT MANUAL JOURNAL ENTRY</span>
+      </span>
+      <span class="text-neutral-300 dark:text-neutral-700">|</span>
+      <span class="text-slate-400">
+        <span data-en="TIMESTAMP:" data-ar="التوقيت الحالي:">TIMESTAMP:</span> <strong class="text-white"><?= date('Y-m-d H:i') ?></strong>
+      </span>
+    </div>
+    <div class="hidden sm:flex items-center gap-2 text-slate-400 text-[11px]">
+      <i data-lucide="shield-check" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i>
+      <span data-en="AUTHORITY VERIFIED" data-ar="موثق بسلطة التشغيل">AUTHORITY VERIFIED</span>
+    </div>
+  </div>
+
+  <!-- Main Content Container -->
+  <div class="flex-1 p-4 md:p-8 space-y-6 max-w-4xl mx-auto w-full">
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#1a3346] pb-5">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <a href="vehicles_fleet.php" class="px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-widest font-semibold border border-[#1e3a50] text-slate-400 hover:border-teal-500 hover:text-teal-600 rounded-xs transition-colors">
+            ← FLEET DATABASE
+          </a>
+          <span class="text-xs text-slate-400 font-mono">SYS-LOG-02</span>
         </div>
+        <h1 class="text-xl md:text-2xl font-bold font-oxanium tracking-tight text-white" data-en="Record Vehicle Telemetry Event" data-ar="تسجيل حركة مركبة / قراءة عداد">
+          Record Vehicle Telemetry Event
+        </h1>
+        <p class="text-xs md:text-sm text-slate-400 mt-1" data-en="Manually record carrier route dispatches, arrival checks, refuel vouchers, and workshop service logs." data-ar="تسجيل يدوي لرحلات الشحن والتوزيع، العودة من المسارات، كوبونات التزود بالوقود، وصيانة الورشة.">
+          Manually record carrier route dispatches, arrival checks, refuel vouchers, and workshop service logs.
+        </p>
+      </div>
+      <div>
+        <button type="button" onclick="history.back()" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-mono uppercase tracking-wider text-slate-300 bg-[#112433] text-slate-200 border-[#234257] bg-[#112433] border border-[#1e3a50] rounded-xs hover:bg-[#102332] dark:hover:bg-neutral-700 transition-colors">
+          <i data-lucide="arrow-left" class="w-4 h-4 rtl:rotate-180"></i>
+          <span data-en="Cancel" data-ar="إلغاء">Cancel</span>
+        </button>
+      </div>
+    </div>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
+    <?php if ($error_msg): ?>
+      <div class="p-3 bg-red-50 dark:bg-red-950/40 border border-red-500/30 text-red-700 dark:text-red-400 rounded-xs text-xs font-mono flex items-center gap-2">
+        <i data-lucide="alert-octagon" class="w-4 h-4 shrink-0"></i>
+        <span><?= htmlspecialchars($error_msg) ?></span>
+      </div>
+    <?php endif; ?>
 
-            <div >
-                <div class="mb-7">
-                    <div class="flex items-center gap-2 mb-2">
-                        <a href="vehicles_fleet.php" class="text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors" style="color: var(--mute); text-decoration: none;">Fleet Database</a>
-                        <i data-lucide="chevron-right" class="w-3 h-3 text-[var(--mute-soft)]"></i>
-                        <span class="text-[11px] font-semibold uppercase tracking-[0.14em]" style="color: var(--ink);">Manual Entry</span>
-                    </div>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Create Manual Log Entry</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Manually record fleet events, fuel logs, dispatch movements, or workshop maintenance criteria.</p>
-                </div>
+    <!-- Form Card -->
+    <form action="" method="POST" class="bg-[#0c1924] border border-[#1a3346] rounded-xs overflow-hidden border-s-4 border-s-[#f97316]">
+      <?= csrf_field() ?>
 
-                <?php if ($error_msg): ?>
-                    <div class="mb-5 p-3 rounded-sm text-[13px] font-medium" style="background: #F8E9E7; color: #963B33; border: 1px solid #963B33;">
-                        <?= htmlspecialchars($error_msg) ?>
-                    </div>
-                <?php endif; ?>
+      <div class="p-6 space-y-6">
 
-                <form action="" method="POST" class="card rounded-md flex flex-col overflow-hidden">
-                    <div class="p-8">
-                        <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="clipboard-list" class="w-4 h-4" style="color: var(--mute);"></i>Log Context
-                        </h3>
-                        
-                        <div class="grid grid-cols-2 gap-6 mb-8">
-                            <div>
-                                <label class="form-label">Target Vehicle</label>
-                                <select class="form-select mono" name="vehicle_id" required>
-                                    <option value="" disabled <?= empty($vehicle_id) ? 'selected' : '' ?>>Select vehicle asset ID...</option>
-                                    <?php foreach ($vehicles as $v): ?>
-                                        <option value="<?= htmlspecialchars($v['fleet_id']) ?>" <?= $vehicle_id === $v['fleet_id'] ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($v['fleet_id']) ?> (<?= htmlspecialchars($v['make_model']) ?> — <?= htmlspecialchars($v['plate_number']) ?>)
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label">Event Type</label>
-                                <select class="form-select" name="event_type" required>
-                                    <option value="" disabled selected>Select event classification</option>
-                                    <option value="dispatch">Dispatch (Outbound Route)</option>
-                                    <option value="arrival">Arrival (Inbound Return)</option>
-                                    <option value="refuel">Refuel Operations</option>
-                                    <option value="maintenance">Maintenance &amp; Repairs</option>
-                                    <option value="incident">Incident / Delay Report</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label">Date of Event</label>
-                                <input type="date" class="form-input mono num" name="event_date" value="<?= date('Y-m-d') ?>" required>
-                            </div>
-                            <div>
-                                <label class="form-label">Time of Event</label>
-                                <input type="time" class="form-input mono num" name="event_time" value="<?= date('H:i') ?>" required>
-                            </div>
-                        </div>
+        <!-- Section 1: Event Context -->
+        <div>
+          <div class="flex items-center gap-2 pb-2 mb-4 border-b border-[#1a3346] text-xs font-mono uppercase tracking-wider font-semibold text-slate-200">
+            <i data-lucide="clipboard-list" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="1. Event Classification & Target Unit" data-ar="1. تصنيف الحدث والناقلة المستهدفة">1. Event Classification & Target Unit</span>
+          </div>
 
-                        <hr class="mb-8" style="border-color: var(--line-soft);">
-
-                        <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="gauge" class="w-4 h-4" style="color: var(--mute);"></i>Operational Metrics
-                        </h3>
-
-                        <div class="grid grid-cols-3 gap-6 mb-8">
-                            <div>
-                                <label class="form-label">Current Odometer</label>
-                                <div class="input-group">
-                                    <input type="number" class="form-input has-suffix mono num" placeholder="0" name="odometer" required>
-                                    <span class="input-suffix">KM</span>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="form-label">Fuel Added (If Refuel)</label>
-                                <div class="input-group">
-                                    <input type="number" step="0.01" class="form-input has-suffix mono num" placeholder="0.00" name="fuel_liters">
-                                    <span class="input-suffix">LTR</span>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="form-label">Associated Cost (SAR)</label>
-                                <div class="input-group">
-                                    <input type="number" step="0.01" class="form-input has-suffix mono num" placeholder="0.00" name="event_cost">
-                                    <span class="input-suffix">SAR</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <hr class="mb-8" style="border-color: var(--line-soft);">
-
-                        <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="text-quote" class="w-4 h-4" style="color: var(--mute);"></i>Verification &amp; Narration
-                        </h3>
-
-                        <div class="grid grid-cols-1 gap-6">
-                            <div>
-                                <label class="form-label">Logged By / Authority Sign-off</label>
-                                <input type="text" name="logged_by" class="form-input" placeholder="e.g. Gate Security, Workshop Supervisor, Ahmed Ali">
-                            </div>
-                            <div>
-                                <label class="form-label">Log Description &amp; Dynamic Details</label>
-                                <textarea name="description" class="form-input" rows="4" placeholder="Provide contextual description of the route, refuel voucher numbers, replacement item metrics, or workshop diagnostics criteria..."></textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="px-8 py-4 border-t flex justify-end gap-3" style="background: var(--paper-dim); border-color: var(--line-soft);">
-                        <button type="button" onclick="history.back()" class="btn-secondary px-5 py-2.5 rounded-sm text-[13.5px] font-medium">Cancel</button>
-                        <button type="submit" class="btn-primary px-6 py-2.5 rounded-sm text-[13.5px] font-medium">Commit Log Entry</button>
-                    </div>
-                </form>
-
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Target Carrier Vehicle *" data-ar="الناقلة المستهدفة *">Target Carrier Vehicle *</label>
+              <select name="vehicle_id" class="w-full py-2 px-3 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:outline-teal-500" required>
+                <option value="" disabled <?= empty($vehicle_id) ? 'selected' : '' ?> data-en="Select carrier asset ID..." data-ar="اختر معرف الناقلة...">Select carrier asset ID...</option>
+                <?php foreach ($vehicles as $v): ?>
+                  <option value="<?= htmlspecialchars($v['fleet_id']) ?>" <?= $vehicle_id === $v['fleet_id'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($v['fleet_id']) ?> (<?= htmlspecialchars($v['make_model']) ?> — <?= htmlspecialchars($v['plate_number']) ?>)
+                  </option>
+                <?php endforeach; ?>
+              </select>
             </div>
-        </div>
-    </main>
 
-    <script>
-        lucide.createIcons();
-    </script>
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Telemetry Event Type *" data-ar="نوع حدث التتبع *">Telemetry Event Type *</label>
+              <select name="event_type" class="w-full py-2 px-3 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:outline-teal-500" required>
+                <option value="" disabled selected data-en="Select event classification..." data-ar="اختر تصنيف الحدث...">Select event classification...</option>
+                <option value="dispatch" data-en="Dispatch (Outbound Route Run)" data-ar="انطلاق في مسار تسليم (خارج)">Dispatch (Outbound Route Run)</option>
+                <option value="arrival" data-en="Arrival (Inbound Return to Plant)" data-ar="وصول وعودة للمصنع (داخل)">Arrival (Inbound Return to Plant)</option>
+                <option value="refuel" data-en="Refuel Operations & Fuel Log" data-ar="تزويد وقود وتسجيل الاستهلاك">Refuel Operations & Fuel Log</option>
+                <option value="maintenance" data-en="Maintenance, Inspection & Repairs" data-ar="صيانة دورية، فحص وإصلاح">Maintenance, Inspection & Repairs</option>
+                <option value="incident" data-en="Operational Incident / Delay Notice" data-ar="حادث تشغيلي / إشعار تأخير">Operational Incident / Delay Notice</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Event Date *" data-ar="تاريخ الحدث *">Event Date *</label>
+              <input type="date" name="event_date" value="<?= date('Y-m-d') ?>" class="w-full py-2 px-3 text-xs font-mono bg-[#112433] border border-[#1e3a50] rounded-xs text-white focus:outline-teal-500" required>
+            </div>
+
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Event Time *" data-ar="وقت الحدث *">Event Time *</label>
+              <input type="time" name="event_time" value="<?= date('H:i') ?>" class="w-full py-2 px-3 text-xs font-mono bg-[#112433] border border-[#1e3a50] rounded-xs text-white focus:outline-teal-500" required>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Operational Metrics -->
+        <div>
+          <div class="flex items-center gap-2 pb-2 mb-4 border-b border-[#1a3346] text-xs font-mono uppercase tracking-wider font-semibold text-slate-200">
+            <i data-lucide="gauge" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="2. Operational Telemetry & Cost" data-ar="2. قراءات العداد والوقود والتكلفة">2. Operational Telemetry & Cost</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Odometer Reading (KM) *" data-ar="قراءة عداد المسافة (كم) *">Odometer Reading (KM) *</label>
+              <div class="relative">
+                <input type="number" name="odometer" placeholder="0" class="w-full py-2 px-3 pr-10 rtl:pr-3 rtl:pl-10 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:outline-teal-500" required>
+                <span class="absolute right-3 rtl:right-auto rtl:left-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-neutral-400 font-bold">KM</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Fuel Dispensed (If Refuel)" data-ar="كمية الوقود المعبأة">Fuel Dispensed (If Refuel)</label>
+              <div class="relative">
+                <input type="number" step="0.01" name="fuel_liters" placeholder="0.00" class="w-full py-2 px-3 pr-10 rtl:pr-3 rtl:pl-10 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:outline-teal-500">
+                <span class="absolute right-3 rtl:right-auto rtl:left-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-neutral-400 font-bold">LTR</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Associated Cost (SAR)" data-ar="التكلفة المسجلة (ريال)">Associated Cost (SAR)</label>
+              <div class="relative">
+                <input type="number" step="0.01" name="event_cost" placeholder="0.00" class="w-full py-2 px-3 pr-12 rtl:pr-3 rtl:pl-12 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:outline-teal-500">
+                <span class="absolute right-3 rtl:right-auto rtl:left-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-neutral-400 font-bold">SAR</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Verification & Description -->
+        <div>
+          <div class="flex items-center gap-2 pb-2 mb-4 border-b border-[#1a3346] text-xs font-mono uppercase tracking-wider font-semibold text-slate-200">
+            <i data-lucide="file-text" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="3. Verification Sign-Off & Observations" data-ar="3. توثيق المسؤول والملاحظات">3. Verification Sign-Off & Observations</span>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Recorded By / Authority Sign-Off" data-ar="المسؤول عن التسجيل / التوقيع">Recorded By / Authority Sign-Off</label>
+              <input type="text" name="logged_by" placeholder="e.g. Gate Officer, Workshop Supervisor, Fleet Controller" data-en-placeholder="e.g. Gate Officer, Workshop Supervisor, Fleet Controller" data-ar-placeholder="مثال: مسؤول البوابة، مشرف الورشة، مراقب الأسطول" class="w-full py-2 px-3 text-xs font-sans bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:outline-teal-500">
+            </div>
+
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1" data-en="Operational Notes & Description" data-ar="ملاحظات وتفاصيل الحدث">Operational Notes & Description</label>
+              <textarea name="description" rows="3" placeholder="Provide context regarding destination route, voucher serial, inspection findings, or delay causes..." data-en-placeholder="Provide context regarding destination route, voucher serial, inspection findings, or delay causes..." data-ar-placeholder="سجل أية تفاصيل عن المسار، رقم إيصال الوقود، نتائج الفحص، أو أسباب التأخير..." class="w-full py-2 px-3 text-xs font-sans bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:outline-teal-500"></textarea>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Form Actions Bar -->
+      <div class="p-4 border-t border-[#1a3346] bg-[#09151f] flex items-center justify-between">
+        <button type="button" onclick="history.back()" class="px-4 py-2 text-xs font-mono uppercase tracking-wider text-slate-300 hover:text-white transition-colors" data-en="Cancel" data-ar="إلغاء">
+          Cancel
+        </button>
+        <button type="submit" class="btn-cta-orange inline-flex items-center gap-2 px-6 py-2 text-xs font-medium font-mono uppercase tracking-wider text-white bg-[#FF6B1A] hover:bg-[#e05a10] rounded-xs cursor-pointer transition-colors">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span data-en="Commit Telemetry Log" data-ar="اعتماد وتسجيل الحركة">Commit Telemetry Log</span>
+        </button>
+      </div>
+    </form>
+
+  </div>
+</main>
+
+<script>
+  lucide.createIcons();
+
+  function applyLanguage(lang) {
+    document.querySelectorAll('[data-en]').forEach(el => {
+      const transText = el.getAttribute('data-' + lang) || el.getAttribute('data-en');
+      if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.hasAttribute('placeholder')) {
+        el.placeholder = transText;
+      } else if (el.tagName === 'OPTION') {
+        el.innerText = transText;
+      } else {
+        el.innerText = transText;
+      }
+    });
+    document.querySelectorAll('[data-en-placeholder]').forEach(el => {
+      el.placeholder = el.getAttribute('data-' + lang + '-placeholder') || el.getAttribute('data-en-placeholder');
+    });
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  }
+
+  document.addEventListener("DOMContentLoaded", function() {
+    const savedLang = localStorage.getItem('app_lang') || 'en';
+    applyLanguage(savedLang);
+  });
+</script>
 </body>
 </html>

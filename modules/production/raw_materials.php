@@ -1,283 +1,410 @@
 <?php
-session_start();
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission('materials.view');
 
 $active_page = 'raw_materials';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Production', 'Raw Materials'];
+$base_url  = '../../';
+$breadcrumb = ['I-GAS', 'Production', 'Raw Materials'];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
-    $delete_id = isset($_POST['material_id']) ? (int)$_POST['material_id'] : 0;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+  require_permission('materials.delete');
+  require_csrf();
+  $delete_id = isset($_POST['material_id']) ? (int)$_POST['material_id'] : 0;
 
-    if ($delete_id > 0) {
-        $del = $pdo->prepare("DELETE FROM raw_materials WHERE id = :id");
-        $del->execute(['id' => $delete_id]);
-    }
+  if ($delete_id > 0) {
+    $del = $pdo->prepare("DELETE FROM raw_materials WHERE id = :id");
+    $del->execute(['id' => $delete_id]);
+  }
 
-    header('Location: raw_materials.php');
-    exit;
+  redirect(app_url('modules/production/raw_materials.php'));
 }
 
 $stmt = $pdo->prepare("
-    SELECT
-        rm.id AS row_id,
-        rm.material_sku,
-        rm.material_name,
-        rm.category,
-        rm.current_stock,
-        rm.unit,
-        rm.safety_stock_threshold,
-        rm.stock_status,
-        rm.unit_cost,
-        p.company_name AS supplier_name
-    FROM raw_materials rm
-    JOIN partners p ON rm.supplier_id = p.id
-    ORDER BY rm.created_at DESC
+  SELECT
+    rm.id AS row_id,
+    rm.material_sku,
+    rm.material_name,
+    rm.category,
+    rm.current_stock,
+    rm.unit,
+    rm.safety_stock_threshold,
+    rm.stock_status,
+    rm.unit_cost,
+    p.company_name AS supplier_name
+  FROM raw_materials rm
+  JOIN partners p ON rm.supplier_id = p.id
+  ORDER BY rm.created_at DESC
 ");
 $stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $materials = [];
-$total_items   = 0;
-$low_stock     = 0;
-$out_of_stock  = 0;
-$total_value   = 0;
+$total_items  = 0;
+$low_stock   = 0;
+$out_of_stock = 0;
+$total_value  = 0;
 
 foreach ($rows as $row) {
-    $status = $row['stock_status'];
+  $status = $row['stock_status'];
 
-    if ((float)$row['current_stock'] <= 0) {
-        $status = 'out';
-    } elseif ((float)$row['current_stock'] <= (float)$row['safety_stock_threshold']) {
-        $status = 'low';
-    } else {
-        $status = 'optimal';
-    }
+  if ((float)$row['current_stock'] <= 0) {
+    $status = 'out';
+  } elseif ((float)$row['current_stock'] <= (float)$row['safety_stock_threshold']) {
+    $status = 'low';
+  } else {
+    $status = 'optimal';
+  }
 
-    $total_items++;
-    if ($status === 'low') { $low_stock++; }
-    if ($status === 'out') { $out_of_stock++; }
+  $total_items++;
+  if ($status === 'low') { $low_stock++; }
+  if ($status === 'out') { $out_of_stock++; }
 
-    $total_value += (float)$row['current_stock'] * (float)$row['unit_cost'];
+  $total_value += (float)$row['current_stock'] * (float)$row['unit_cost'];
 
-    $materials[] = [
-        'row_id' => $row['row_id'],
-        'id' => $row['material_sku'],
-        'name' => $row['material_name'],
-        'category' => $row['category'],
-        'stock' => (float)$row['current_stock'],
-        'unit' => $row['unit'],
-        'threshold' => (float)$row['safety_stock_threshold'],
-        'supplier' => $row['supplier_name'],
-        'status' => $status,
-    ];
+  $materials[] = [
+    'row_id' => $row['row_id'],
+    'id' => $row['material_sku'],
+    'name' => $row['material_name'],
+    'category' => $row['category'],
+    'stock' => (float)$row['current_stock'],
+    'unit' => $row['unit'],
+    'threshold' => (float)$row['safety_stock_threshold'],
+    'supplier' => $row['supplier_name'],
+    'status' => $status,
+  ];
 }
 
 $low_stock_list = array_values(array_filter($materials, fn($m) => $m['status'] === 'low'));
 $out_of_stock_list = array_values(array_filter($materials, fn($m) => $m['status'] === 'out'));
 
 $statusStyles = [
-    'optimal' => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'In Stock'],
-    'low'     => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Low Stock'],
-    'out'     => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Out of Stock'],
+  'optimal' => ['border' => 'border-emerald-500/30', 'bg' => 'bg-emerald-500/10', 'text' => 'text-emerald-700 dark:text-emerald-400', 'dot' => 'bg-emerald-500', 'label_en' => 'In Stock', 'label_ar' => 'متوفر'],
+  'low'   => ['border' => 'border-amber-500/30', 'bg' => 'bg-amber-500/10', 'text' => 'text-amber-400 dark:text-amber-400', 'dot' => 'bg-amber-500', 'label_en' => 'Low Stock', 'label_ar' => 'مخزون منخفض'],
+  'out'   => ['border' => 'border-rose-500/30', 'bg' => 'bg-rose-500/10', 'text' => 'text-rose-400 dark:text-rose-400', 'dot' => 'bg-rose-500', 'label_en' => 'Out of Stock', 'label_ar' => 'نفد المخزون'],
 ];
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars($_SESSION['lang'] ?? 'en') ?>" dir="<?= ($_SESSION['lang'] ?? 'en') === 'ar' ? 'rtl' : 'ltr' ?>" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Raw Materials | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-<link rel="stylesheet" href="../../assets/css/main.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-en="Raw Materials | I-GAS Enterprise" data-ar="المواد الخام | I-GAS Enterprise">Raw Materials | I-GAS Enterprise</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="<?= app_url('assets/css/theme.css') ?>">
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+  <?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-    <?php include '../../includes/header.php'; ?>
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
+    <!-- Telemetry Status Bar -->
+    <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 sm:px-6 flex items-center justify-between text-xs font-mono text-slate-400">
+      <div class="flex items-center gap-4 overflow-x-auto no-scrollbar">
+        <span class="flex items-center gap-1.5 font-medium text-teal-400 dark:text-teal-400">
+          <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+          <span data-en="SYS: NOMINAL" data-ar="النظام: مستقر">SYS: NOMINAL</span>
+        </span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span data-en="RAW FEEDSTOCK & TANK FARM INVENTORY" data-ar="مخزون المواد الخام وخزانات التبريد">RAW FEEDSTOCK & TANK FARM INVENTORY</span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span class="font-mono text-neutral-500">CATALOG: <?= $total_items ?> SKUs</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-3">
+        <span class="text-[11px] text-neutral-400 font-mono">PLANT — JEDDAH HUB</span>
+      </div>
+    </div>
+
+    <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
+
+      <!-- Page Title & Header Actions -->
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-[#1a3346]">
+        <div>
+          <span class="text-xs font-mono uppercase tracking-wider text-teal-600 dark:text-teal-400 font-semibold block mb-1" data-en="PRODUCTION INVENTORY MASTER" data-ar="سجل مخزون الإنتاج">PRODUCTION INVENTORY MASTER</span>
+          <h1 class="text-2xl font-bold font-mono tracking-tight text-white" data-en="Raw Materials" data-ar="المواد الخام">
+            Raw Materials
+          </h1>
+          <p class="text-xs font-mono text-neutral-500 mt-1" data-en="Monitor bulk liquid feedstock, calibration gases, cylinder fittings, and process additives." data-ar="مراقبة الغازات السائلة السائبة وغازات المعايرة وتجهيزات الأسطوانات وإضافات العمليات.">
+            Monitor bulk liquid feedstock, calibration gases, cylinder fittings, and process additives.
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <a href="<?= app_url('modules/production/new_purchase_order.php') ?>" class="btn-secondary h-9 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 transition-colors">
+            <i data-lucide="shopping-cart" class="w-3.5 h-3.5 text-slate-400"></i>
+            <span data-en="Procurement Order" data-ar="أمر توريد">Procurement Order</span>
+          </a>
+          <?php if (has_permission('materials.create')): ?>
+          <a href="<?= app_url('modules/production/new_material.php') ?>" class="btn-cta-orange h-9 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 transition-all">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span data-en="Add Material" data-ar="إضافة مادة">Add Material</span>
+          </a>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <!-- Bento Metric Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Total Stocked Items -->
+        <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm p-4 border-s-4 border-s-[#f97316]">
+          <div class="flex items-center justify-between text-xs font-mono text-neutral-500 uppercase tracking-wider mb-2">
+            <span data-en="Total Stocked Items" data-ar="إجمالي العناصر">Total Stocked Items</span>
+            <i data-lucide="boxes" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+          </div>
+          <div class="text-3xl font-mono font-bold text-white tabular-nums">
+            <?= number_format($total_items) ?>
+          </div>
+          <div class="mt-3 pt-2.5 border-t border-neutral-100 border-[#1a3346] flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span data-en="Catalog SKUs" data-ar="أصناف الكتالوج">Catalog SKUs</span>
+            <span class="text-teal-600 dark:text-teal-400 font-semibold">Active Matrix</span>
+          </div>
+        </div>
+
+        <!-- Low Stock Alerts -->
+        <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm p-4 border-s-4 border-s-[#f97316] dark:border-s-amber-500">
+          <div class="flex items-center justify-between text-xs font-mono text-neutral-500 uppercase tracking-wider mb-2">
+            <span data-en="Low Stock Alerts" data-ar="تنبيهات نقص المخزون">Low Stock Alerts</span>
+            <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 dark:text-amber-500"></i>
+          </div>
+          <div class="text-3xl font-mono font-bold text-amber-400 dark:text-amber-400 tabular-nums">
+            <?= number_format($low_stock) ?>
+          </div>
+          <div class="mt-3 pt-2.5 border-t border-neutral-100 border-[#1a3346] flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span class="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 whitespace-nowrap">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              <span data-en="Below Safety Stock" data-ar="أقل من حد الأمان">Below Safety Stock</span>
             </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
+            <span>Reorder Now</span>
+          </div>
         </div>
 
-        <?php if (isset($_GET['created'])): ?>
-        <div class="px-8 pt-5">
-            <div class="rounded-sm px-4 py-3 text-[13px] flex items-center gap-2" style="background:#EAF1E7; color:#45663F; border:1px solid #D3E3CE;">
-                <i data-lucide="check-circle-2" class="w-4 h-4"></i>Material saved successfully.
+        <!-- Out of Stock -->
+        <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm p-4 border-s-4 border-s-[#f97316] dark:border-s-rose-500">
+          <div class="flex items-center justify-between text-xs font-mono text-neutral-500 uppercase tracking-wider mb-2">
+            <span data-en="Out of Stock" data-ar="نفد من المخزون">Out of Stock</span>
+            <i data-lucide="x-circle" class="w-4 h-4 text-rose-600 dark:text-rose-500"></i>
+          </div>
+          <div class="text-3xl font-mono font-bold text-rose-400 dark:text-rose-400 tabular-nums">
+            <?= number_format($out_of_stock) ?>
+          </div>
+          <div class="mt-3 pt-2.5 border-t border-neutral-100 border-[#1a3346] flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span class="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400 whitespace-nowrap">
+              <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+              <span data-en="Depleted Feedstock" data-ar="مخزون مستنفد">Depleted Feedstock</span>
+            </span>
+            <span>Critical</span>
+          </div>
+        </div>
+
+        <!-- Total Valuation -->
+        <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm p-4 border-s-4 border-s-[#f97316] dark:border-s-emerald-500">
+          <div class="flex items-center justify-between text-xs font-mono text-neutral-500 uppercase tracking-wider mb-2">
+            <span data-en="Total Inventory Value" data-ar="إجمالي قيمة المخزون">Total Inventory Value</span>
+            <i data-lucide="badge-dollar-sign" class="w-4 h-4 text-emerald-600 dark:text-emerald-500"></i>
+          </div>
+          <div class="flex items-baseline gap-1.5">
+            <span class="text-2xl font-mono font-bold text-white tabular-nums"><?= number_format($total_value, 2) ?></span>
+            <span class="text-xs font-mono text-neutral-500">SAR</span>
+          </div>
+          <div class="mt-3 pt-2.5 border-t border-neutral-100 border-[#1a3346] flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span data-en="Unit Cost Basis" data-ar="أساس تكلفة الوحدة">Unit Cost Basis</span>
+            <span class="text-emerald-600 dark:text-emerald-400 font-semibold">Audited</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Materials Master List Table Container -->
+      <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm flex flex-col overflow-hidden">
+        <!-- Filters Bar -->
+        <div class="p-4 sm:p-5 border-b border-[#1a3346] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#071018]">
+          <div class="flex flex-wrap items-center gap-4">
+            <h2 class="text-base font-mono font-semibold text-white" data-en="Materials Master Registry" data-ar="سجل المواد الرئيسي">
+              Materials Master Registry
+            </h2>
+            <div class="flex items-center gap-2 text-xs font-mono">
+              <button type="button" class="tab-pill px-3 py-1 border border-teal-600 bg-teal-950/30 dark:bg-teal-950 text-teal-300 dark:text-teal-300 rounded-sm font-semibold filter-btn active whitespace-nowrap" data-filter="all">
+                <span data-en="All" data-ar="الكل">All</span> (<?= count($materials) ?>)
+              </button>
+              <button type="button" class="tab-pill px-3 py-1 border border-[#1e3a50] bg-[#0c1924] text-slate-300 rounded-sm hover:border-neutral-400 filter-btn whitespace-nowrap" data-filter="low">
+                <span data-en="Low Stock" data-ar="مخزون منخفض">Low Stock</span> (<?= count($low_stock_list) ?>)
+              </button>
+              <button type="button" class="tab-pill px-3 py-1 border border-[#1e3a50] bg-[#0c1924] text-slate-300 rounded-sm hover:border-neutral-400 filter-btn whitespace-nowrap" data-filter="out">
+                <span data-en="Out of Stock" data-ar="نفد">Out of Stock</span> (<?= count($out_of_stock_list) ?>)
+              </button>
             </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            <div class="relative flex items-center bg-[#07111a] border border-[#1e3a50] rounded-md px-3 h-9 focus-within:border-orange-500 w-full sm:w-64 md:w-72">
+                <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 mr-2.5 rtl:ml-2.5 shrink-0 pointer-events-none"></i>
+                <input type="text" id="searchInput" placeholder="Search SKU, name, supplier..." data-en="Search SKU, name, supplier..." data-ar="البحث برقم الصنف أو الاسم..." class="bg-transparent border-0 text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none w-full p-0">
+              </div>
+            <select id="categoryFilter" class="h-9 px-3 text-xs font-mono bg-[#07111a] border border-[#1e3a50] rounded-md text-slate-100 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/40 transition-all">
+              <option value="all" data-en="All Categories" data-ar="جميع الفئات">All Categories</option>
+              <option value="Bulk Gas" data-en="Bulk Gas" data-ar="الغاز السائب">Bulk Gas</option>
+              <option value="Chemicals" data-en="Chemicals" data-ar="المواد الكيميائية">Chemicals</option>
+              <option value="Containers" data-en="Containers" data-ar="الحاويات">Containers</option>
+              <option value="Spare Parts" data-en="Spare Parts" data-ar="قطع الغيار">Spare Parts</option>
+            </select>
+          </div>
         </div>
-        <?php endif; ?>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
-
-            <div class="flex justify-between items-end mb-7">
-                <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2" style="color: var(--mute);">Production & Inventory</p>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Raw Materials</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Monitor bulk gases, chemicals, and physical components required for production.</p>
-                </div>
-                <div class="flex gap-3">
-                    <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="download" class="w-4 h-4"></i>Export Inventory
-                    </button>
-                    <a href="new_material.php" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="plus" class="w-4 h-4"></i>Add Material
+        <!-- Table Content -->
+        <div class="overflow-x-auto custom-scrollbar flex-1 w-full">
+          <table class="w-full text-left rtl:text-right border-collapse">
+            <thead>
+              <tr class="text-[11px] font-mono uppercase tracking-wider border-b border-[#1a3346] bg-[#102230]/60 bg-[#0c1924] text-slate-400">
+                <th class="px-4 py-3 font-semibold w-36">Material SKU</th>
+                <th class="px-4 py-3 font-semibold" data-en="Description / Grade" data-ar="الوصف / الدرجة">Description / Grade</th>
+                <th class="px-4 py-3 font-semibold" data-en="Category" data-ar="الفئة">Category</th>
+                <th class="px-4 py-3 font-semibold text-right" data-en="Current Stock" data-ar="المخزون الحالي">Current Stock</th>
+                <th class="px-4 py-3 font-semibold" data-en="Primary Supplier" data-ar="المورد الأساسي">Primary Supplier</th>
+                <th class="px-4 py-3 font-semibold text-center" data-en="Status" data-ar="الحالة">Status</th>
+                <th class="px-4 py-3 font-semibold text-right rtl:text-left w-28" data-en="Actions" data-ar="الإجراءات">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody" class="text-xs divide-y divide-[#152a3a]">
+              <?php if (empty($materials)): ?>
+              <tr>
+                <td colspan="7" class="text-center py-12 text-neutral-500 font-mono" data-en="No raw materials registered currently." data-ar="لا توجد مواد خام مسجلة حالياً.">
+                  No raw materials registered currently.
+                </td>
+              </tr>
+              <?php else: ?>
+                <?php foreach ($materials as $m): ?>
+                <?php
+                  $statusObj = $statusStyles[$m['status']];
+                  $searchString = strtolower($m['id'] . ' ' . $m['name'] . ' ' . $m['category'] . ' ' . $m['supplier']);
+                ?>
+                <tr class="hover:bg-[#102332] transition-colors table-row-item" data-status="<?= htmlspecialchars($m['status']) ?>" data-category="<?= htmlspecialchars($m['category']) ?>" data-search="<?= htmlspecialchars($searchString) ?>">
+                  <td class="px-4 py-3 font-mono font-semibold tabular-nums text-teal-400 dark:text-teal-400 whitespace-nowrap">
+                    <?= htmlspecialchars($m['id']) ?>
+                  </td>
+                  <td class="px-4 py-3 font-medium text-white">
+                    <a href="<?= app_url('modules/production/material_details.php?id=' . urlencode($m['row_id'])) ?>" class="hover:text-teal-600 dark:hover:text-teal-400 transition-colors">
+                      <?= htmlspecialchars($m['name']) ?>
                     </a>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Stocked Items</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_items) ?></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);">Unique SKUs in catalog</span>
+                  </td>
+                  <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap">
+                    <span class="px-2 py-0.5 rounded-sm bg-[#09151f] border border-[#1e3a50] text-[11px]">
+                      <?= htmlspecialchars($m['category']) ?>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-right font-mono font-semibold tabular-nums whitespace-nowrap <?= $m['status'] === 'low' ? 'text-amber-600 dark:text-amber-400' : ($m['status'] === 'out' ? 'text-rose-600 dark:text-rose-400' : 'text-white') ?>">
+                    <?= number_format($m['stock']) ?> <span class="text-[11px] font-normal text-neutral-500"><?= htmlspecialchars($m['unit']) ?></span>
+                  </td>
+                  <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap">
+                    <?= htmlspecialchars($m['supplier']) ?>
+                  </td>
+                  <td class="px-4 py-3 text-center whitespace-nowrap">
+                    <span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-sm text-[11px] font-mono border <?= $statusObj['border'] ?> <?= $statusObj['bg'] ?> <?= $statusObj['text'] ?>">
+                      <span class="w-1.5 h-1.5 rounded-full <?= $statusObj['dot'] ?>"></span>
+                      <span data-en="<?= $statusObj['label_en'] ?>" data-ar="<?= $statusObj['label_ar'] ?>"><?= $statusObj['label_en'] ?></span>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-right rtl:text-left whitespace-nowrap">
+                    <div class="flex items-center justify-end gap-2">
+                      <a href="<?= app_url('modules/production/material_details.php?id=' . urlencode($m['row_id'])) ?>" class="px-2 py-1 text-xs font-mono uppercase tracking-wider bg-[#112433] border border-[#1e3a50] hover:bg-[#102332] dark:hover:bg-neutral-750 text-slate-200 rounded-sm transition-colors" data-en="View" data-ar="عرض">
+                        View
+                      </a>
+                      <?php if (has_permission('materials.delete')): ?>
+                      <form method="POST" action="" class="m-0 p-0 inline" onsubmit="return confirm('Are you sure you want to delete this material? / هل أنت متأكد من حذف هذه المادة؟');">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="material_id" value="<?= htmlspecialchars($m['row_id']) ?>">
+                        <button type="submit" class="p-1 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded-sm" title="Delete Material">
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                      </form>
+                      <?php endif; ?>
                     </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Low Stock Alerts</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($low_stock) ?></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span class="pill" style="background: var(--accent-soft); color: #7A5E1E;">
-                            <i data-lucide="alert-triangle" class="w-3 h-3"></i>Requires Reorder
-                        </span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Out of Stock</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: #963B33;"><?= number_format($out_of_stock) ?></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span class="pill" style="background: #F8E9E7; color: #963B33;">
-                            <i data-lucide="x-circle" class="w-3 h-3"></i>Depleted inventory
-                        </span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Inventory Value</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_value) ?> <span class="text-[13px] font-normal" style="color: var(--mute);">SAR</span></h3>
-                    <div class="mt-4 meter-bar h-1.5 w-full overflow-hidden">
-                        <div class="meter-fill h-full" style="width: 75%; background: var(--ink);"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card rounded-md flex flex-col overflow-hidden">
-                <div class="px-6 pt-5 border-b" style="border-color: var(--line-soft);">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-[15px] font-semibold tracking-tight" style="color: var(--ink);">Materials Master List</h3>
-                        <div class="flex items-center gap-3">
-                            <div class="relative">
-                                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2" style="color: var(--mute-soft);"></i>
-                                <input type="text" placeholder="Search ID or name..." class="pl-8 pr-3 py-1.5 bg-white border rounded-sm text-[12.5px] w-56" style="border-color: var(--line);">
-                            </div>
-                            <select class="border rounded-sm text-[12.5px] py-1.5 px-2.5" style="border-color: var(--line); color: var(--ink);">
-                                <option>All Categories</option>
-                                <option>Bulk Gas</option>
-                                <option>Chemicals</option>
-                                <option>Containers</option>
-                                <option>Spare Parts</option>
-                            </select>
-                            <button class="flex items-center justify-center w-8 h-8 border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i></button>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">All Items <span class="num text-[11px]" style="color: var(--mute-soft);"><?= count($materials) ?></span></span>
-                        <span class="tab-item">Low Stock <span class="num text-[11px]" style="color: var(--mute-soft);"><?= count($low_stock_list) ?></span></span>
-                        <span class="tab-item text-red-700">Out of Stock <span class="num text-[11px]" style="color: #963B33;"><?= count($out_of_stock_list) ?></span></span>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto flex-1">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft);">
-                                <th class="pl-6 pr-2 py-3 font-medium w-8"><span class="checkbox-sq"></span></th>
-                                <th class="px-3 py-3 font-medium">Material ID</th>
-                                <th class="px-3 py-3 font-medium">Description</th>
-                                <th class="px-3 py-3 font-medium">Category</th>
-                                <th class="px-3 py-3 font-medium text-right">Current Stock</th>
-                                <th class="px-3 py-3 font-medium">Primary Supplier</th>
-                                <th class="px-3 py-3 font-medium">Status</th>
-                                <th class="pr-6 py-3 font-medium text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($materials as $m): ?>
-                            <?php
-                                $statusObj = $statusStyles[$m['status']];
-                                $isOut = $m['status'] === 'out';
-                                $rowColor = $isOut ? 'var(--mute-soft)' : 'var(--ink)';
-                                $stockColor = $m['status'] === 'low' ? '#7A5E1E' : ($isOut ? '#963B33' : 'var(--ink)');
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5 num font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($m['id']) ?></td>
-                                <td class="px-3 py-3.5 font-medium" style="color: <?= $rowColor ?>;"><?= htmlspecialchars($m['name']) ?></td>
-                                <td class="px-3 py-3.5 text-[12.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($m['category']) ?></td>
-                                <td class="px-3 py-3.5 text-right font-medium num" style="color: <?= $stockColor ?>;">
-                                    <?= number_format($m['stock']) ?> <span class="text-[11.5px] font-normal mono ml-1" style="color: var(--mute);"><?= htmlspecialchars($m['unit']) ?></span>
-                                </td>
-                                <td class="px-3 py-3.5 text-[12.5px]" style="color: var(--mute);"><?= htmlspecialchars($m['supplier']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $statusObj['bg'] ?>; color: <?= $statusObj['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $statusObj['dot'] ?>;"></span><?= $statusObj['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right">
-                                    <div class="flex items-center justify-end gap-4">
-                                        <a href="material_details.php?id=<?= urlencode($m['row_id']) ?>" class="transition-colors" style="color: var(--mute); text-decoration: none;" title="View Details" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                                        </a>
-                                        <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('Are you sure you want to delete this material?');">
-                                            <input type="hidden" name="action" value="delete">
-                                            <input type="hidden" name="material_id" value="<?= htmlspecialchars($m['row_id']) ?>">
-                                            <button type="submit" class="transition-colors bg-transparent border-none cursor-pointer flex items-center" style="color: #963B33; padding: 0;" title="Delete Material" onmouseover="this.style.color='#7a2d26'" onmouseout="this.style.color='#963B33'">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($materials)): ?>
-                            <tr>
-                                <td colspan="8" class="text-center py-6 text-sm" style="color: var(--mute);">لا توجد مواد خام مسجلة حالياً.</td>
-                            </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($materials) > 0 ? '1' : '0' ?>–<?= count($materials) ?> of <?= count($materials) ?> Items</span>
-                    <div class="flex items-center gap-1.5">
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
-                        <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
-                    </div>
-                </div>
-            </div>
-
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </tbody>
+          </table>
         </div>
-    </main>
 
-    <script>
-        lucide.createIcons();
-    </script>
+        <!-- Footer Summary Pagination -->
+        <div class="p-3.5 border-t border-[#1a3346] flex justify-between items-center bg-[#071018] text-xs font-mono text-neutral-500">
+          <span id="showingCount" data-en="Showing <?= count($materials) > 0 ? '1' : '0' ?>–<?= count($materials) ?> of <?= count($materials) ?> Items" data-ar="عرض <?= count($materials) > 0 ? '1' : '0' ?>–<?= count($materials) ?> من أصل <?= count($materials) ?> من العناصر">
+            Showing <?= count($materials) > 0 ? '1' : '0' ?>–<?= count($materials) ?> of <?= count($materials) ?> Items
+          </span>
+          <div class="text-[11px] text-neutral-400">
+            <span data-en="Industrial Feedstock & Raw Gas Tank Farm Inventory" data-ar="مخزون المواد الخام وخزانات الغاز الصناعي">Industrial Feedstock & Raw Gas Tank Farm Inventory</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    lucide.createIcons();
+
+    document.addEventListener("DOMContentLoaded", function() {
+      const searchInput = document.getElementById('searchInput');
+      const categoryFilter = document.getElementById('categoryFilter');
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      const rows = document.querySelectorAll('.table-row-item');
+      let currentStatusFilter = 'all';
+
+      function filterTable() {
+        const query = searchInput ? searchInput.value.toLowerCase() : '';
+        const selectedCategory = categoryFilter ? categoryFilter.value : 'all';
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+          const status = row.getAttribute('data-status');
+          const category = row.getAttribute('data-category');
+          const searchData = row.getAttribute('data-search');
+
+          const matchesStatus = (currentStatusFilter === 'all' || status === currentStatusFilter);
+          const matchesCategory = (selectedCategory === 'all' || category === selectedCategory);
+          const matchesSearch = searchData.includes(query);
+
+          if (matchesStatus && matchesCategory && matchesSearch) {
+            row.style.display = '';
+            visibleCount++;
+          } else {
+            row.style.display = 'none';
+          }
+        });
+        
+        const showingCountEl = document.getElementById('showingCount');
+        if (showingCountEl) {
+          showingCountEl.innerText = `Showing ${visibleCount} item(s)`;
+        }
+      }
+
+      if (searchInput) searchInput.addEventListener('input', filterTable);
+      if (categoryFilter) categoryFilter.addEventListener('change', filterTable);
+
+      filterButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          filterButtons.forEach(b => {
+            b.classList.remove('active', 'border-teal-600', 'bg-teal-950/30', 'dark:bg-teal-950', 'text-teal-300', 'dark:text-teal-300', 'font-semibold');
+            b.classList.add('border-neutral-300', 'border-[#1e3a50]', 'bg-[#112433]', 'bg-[#0c1924]', 'text-slate-300', 'text-slate-300');
+          });
+          btn.classList.add('active', 'border-teal-600', 'bg-teal-950/30', 'dark:bg-teal-950', 'text-teal-300', 'dark:text-teal-300', 'font-semibold');
+          btn.classList.remove('border-neutral-300', 'border-[#1e3a50]', 'bg-[#112433]', 'bg-[#0c1924]', 'text-slate-300', 'text-slate-300');
+          currentStatusFilter = btn.getAttribute('data-filter');
+          filterTable();
+        });
+      });
+    });
+  </script>
 </body>
 </html>

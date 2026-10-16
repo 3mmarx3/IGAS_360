@@ -1,313 +1,350 @@
 <?php
-session_start();
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission('production.view');
 
 $active_page = 'liquid_tracking';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Production', 'Bulk Liquid Tracking'];
+$base_url  = '../../';
+$breadcrumb = ['I-GAS', 'Production', 'Liquid Reconciliation'];
 
-$plant_tanks = [
-    [
-        'id' => 'PLT-O2-01',
-        'tank_name' => 'Main LOX Storage', 
-        'gas' => 'Liquid Oxygen (LOX)', 
-        'capacity' => 100000, 
-        'current' => 78500, 
-        'pressure' => 12.5, 
-        'purity' => '99.99%', 
-        'status' => 'optimal',
-        'last_fill' => '2026-08-18 08:30:00'
-    ],
-    [
-        'id' => 'PLT-N2-01',
-        'tank_name' => 'Primary LIN Storage', 
-        'gas' => 'Liquid Nitrogen (LIN)', 
-        'capacity' => 80000, 
-        'current' => 21000, 
-        'pressure' => 8.2, 
-        'purity' => '99.999%', 
-        'status' => 'refuel_req',
-        'last_fill' => '2026-08-10 14:15:00'
-    ],
-    [
-        'id' => 'PLT-AR-01',
-        'tank_name' => 'LAR Reserve Depot', 
-        'gas' => 'Liquid Argon (LAR)', 
-        'capacity' => 30000, 
-        'current' => 28500, 
-        'pressure' => 14.1, 
-        'purity' => '99.999%', 
-        'status' => 'optimal',
-        'last_fill' => '2026-08-17 11:00:00'
-    ],
-    [
-        'id' => 'PLT-LPG-01',
-        'tank_name' => 'LPG Central Hub', 
-        'gas' => 'Liquid Petroleum Gas', 
-        'capacity' => 150000, 
-        'current' => 18000, 
-        'pressure' => 5.5, 
-        'purity' => 'Standard', 
-        'status' => 'critical',
-        'last_fill' => '2026-07-28 09:45:00'
-    ]
+$selected_year = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
+
+$stmt_factors = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'factor_%'");
+$db_factors = [];
+if ($stmt_factors) {
+  while ($row = $stmt_factors->fetch(PDO::FETCH_ASSOC)) {
+    $db_factors[$row['setting_key']] = (float)$row['setting_value'];
+  }
+}
+
+function getGasKey($name) {
+  $n = mb_strtolower($name, 'UTF-8');
+  if (strpos($n, 'oxy') !== false || strpos($n, 'أكسجين') !== false) return 'oxygen';
+  if (strpos($n, 'nit') !== false || strpos($n, 'نيتروجين') !== false) return 'nitrogen';
+  if (strpos($n, 'arg') !== false || strpos($n, 'أرجون') !== false) return 'argon';
+  if (strpos($n, 'co2') !== false || strpos($n, 'carbon') !== false || strpos($n, 'كربون') !== false) return 'co2';
+  return 'other';
+}
+
+function getFactorForGas($name, $pdo, &$db_factors) {
+  $k = getGasKey($name);
+  $setting_key = 'factor_' . $k;
+  
+  if (isset($db_factors[$setting_key])) {
+    return $db_factors[$setting_key];
+  }
+  
+  $defaults = [
+    'oxygen'  => 7.30,
+    'nitrogen' => 6.39,
+    'argon'  => 9.12,
+    'co2'   => 10.04
+  ];
+  
+  $factor = $defaults[$k] ?? 1.00;
+  
+  if ($k !== 'other') {
+    try {
+      $isSqlite = ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite');
+      if ($isSqlite) {
+        $ins = $pdo->prepare("INSERT OR REPLACE INTO system_settings (setting_key, setting_value) VALUES (?, ?)");
+      } else {
+        $ins = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+      }
+      $ins->execute([$setting_key, (string)$factor]);
+      $db_factors[$setting_key] = $factor;
+    } catch (Exception $e) {}
+  }
+  
+  return $factor;
+}
+
+function initializeYearData() {
+  $d = [];
+  for ($m = 1; $m <= 12; $m++) {
+    $d[$m] = ['produced' => 0, 'liquid' => 0];
+  }
+  return $d;
+}
+
+$stmt_bg = $pdo->query("SELECT id, material_name FROM raw_materials WHERE category = 'Bulk Gas'");
+$bulk_gas_rows = $stmt_bg ? $stmt_bg->fetchAll(PDO::FETCH_ASSOC) : [];
+$bulk_gases = [];
+$bulk_gas_ids = [];
+foreach ($bulk_gas_rows as $bg_row) {
+  $bulk_gases[] = $bg_row['material_name'];
+  $bulk_gas_ids[$bg_row['material_name']] = (int)$bg_row['id'];
+}
+
+$reconciliation_data = [];
+foreach ($bulk_gases as $gas) {
+  $reconciliation_data[$gas] = initializeYearData();
+}
+
+$stmt_liquid = $pdo->prepare("
+  SELECT MONTH(mt.transaction_date) as m, rm.material_name, SUM(mt.quantity) as total_liquid
+  FROM material_transactions mt
+  JOIN raw_materials rm ON mt.material_id = rm.id
+  WHERE mt.type = 'in' AND rm.category = 'Bulk Gas' AND YEAR(mt.transaction_date) = ?
+  GROUP BY m, rm.material_name
+");
+$stmt_liquid->execute([$selected_year]);
+while ($row = $stmt_liquid->fetch(PDO::FETCH_ASSOC)) {
+  $m = (int)$row['m'];
+  $name = $row['material_name'];
+  if (isset($reconciliation_data[$name]) && isset($reconciliation_data[$name][$m])) {
+    $reconciliation_data[$name][$m]['liquid'] += (float)$row['total_liquid'];
+  }
+}
+
+$stmt_produced = $pdo->prepare("
+  SELECT MONTH(po.order_date) as m, poi.item_name, SUM(poi.qty) as total_produced
+  FROM purchase_order_items poi
+  JOIN purchase_orders po ON poi.purchase_order_id = po.id
+  WHERE YEAR(po.order_date) = ? AND po.status NOT IN ('cancelled', 'draft')
+  GROUP BY m, poi.item_name
+");
+$stmt_produced->execute([$selected_year]);
+while ($row = $stmt_produced->fetch(PDO::FETCH_ASSOC)) {
+  $m = (int)$row['m'];
+  $po_item = $row['item_name'];
+  $po_key = getGasKey($po_item);
+  
+  foreach ($bulk_gases as $gas) {
+    if ($po_key !== 'other' && getGasKey($gas) === $po_key) {
+      if (isset($reconciliation_data[$gas][$m])) {
+        $reconciliation_data[$gas][$m]['produced'] += (float)$row['total_produced'];
+      }
+      break;
+    }
+  }
+}
+
+$months = [
+  1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'May', 6 => 'Jun',
+  7 => 'Jul', 8 => 'Aug', 9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec'
 ];
 
-$total_capacity = array_sum(array_column($plant_tanks, 'capacity'));
-$total_current  = array_sum(array_column($plant_tanks, 'current'));
-$overall_pct    = $total_capacity > 0 ? round(($total_current / $total_capacity) * 100) : 0;
-
-$statusStyles = [
-    'optimal'     => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Optimal Level'],
-    'refuel_req'  => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Delivery Scheduled'],
-    'critical'    => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Critical / Low'],
-    'maintenance' => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Under Maintenance']
+$months_ar = [
+  1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل', 5 => 'مايو', 6 => 'يونيو',
+  7 => 'يوليو', 8 => 'أغسطس', 9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر'
 ];
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars($_SESSION['lang'] ?? 'en') ?>" dir="<?= ($_SESSION['lang'] ?? 'en') === 'ar' ? 'rtl' : 'ltr' ?>" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bulk Liquid Tracking | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
-        }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
-        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-
-        .card { background: var(--paper); border: 1px solid var(--line-soft); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-
-        .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 9999px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
-        .tab-item { cursor: pointer; padding-bottom: 12px; border-bottom: 2px solid transparent; transition: all 0.2s; }
-        .tab-item.active { border-bottom-color: var(--ink); color: var(--ink); }
-        .tab-item:not(.active) { color: var(--mute); }
-        .tab-item:not(.active):hover { color: var(--ink); }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-en="Liquid Reconciliation | I-GAS Enterprise" data-ar="مطابقة السوائل | I-GAS Enterprise">Liquid Reconciliation | I-GAS Enterprise</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="<?= app_url('assets/css/theme.css') ?>">
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+  <?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-    <?php include '../../includes/header.php'; ?>
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>Sensors Online
+    <!-- Telemetry Status Bar -->
+    <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 sm:px-6 flex items-center justify-between text-xs font-mono text-slate-400">
+      <div class="flex items-center gap-4 overflow-x-auto no-scrollbar">
+        <span class="flex items-center gap-1.5 font-medium text-teal-400 dark:text-teal-400">
+          <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+          <span data-en="SYS: NOMINAL" data-ar="النظام: مستقر">SYS: NOMINAL</span>
+        </span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span data-en="PLANT: JEDDAH MAIN FACILITY" data-ar="المحطة: منشأة جدة الرئيسية">PLANT: JEDDAH MAIN FACILITY</span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span data-en="CRYO TANK FARM" data-ar="مزرعة صهاريج التبريد">CRYO TANK FARM</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-2">
+        <span class="text-neutral-400 dark:text-neutral-500">CYCLE:</span>
+        <span class="text-slate-300 font-semibold font-mono"><?= $selected_year ?></span>
+      </div>
+    </div>
+
+    <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl">
+
+      <!-- Page Header -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1a3346] pb-5">
+        <div>
+          <div class="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">
+            <span data-en="PRODUCTION & INVENTORY" data-ar="الإنتاج والمخزون">PRODUCTION & INVENTORY</span>
+            <span>/</span>
+            <span class="text-teal-400 dark:text-teal-400" data-en="CRYOGENIC RECONCILIATION" data-ar="مطابقة السوائل">CRYOGENIC RECONCILIATION</span>
+          </div>
+          <h1 class="font-heading font-bold text-2xl sm:text-3xl text-white tracking-tight" data-en="Liquid Reconciliation" data-ar="مطابقة السوائل">
+            Liquid Reconciliation
+          </h1>
+          
+          <!-- Year Switcher Tabs -->
+          <div class="flex items-center gap-4 mt-3">
+            <?php for($y = (int)date('Y') - 2; $y <= (int)date('Y'); $y++): ?>
+              <a href="?year=<?= $y ?>" class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors <?= $selected_year === $y ? 'border-teal-600 text-teal-400 dark:text-teal-400 font-semibold' : 'border-transparent text-slate-400 hover:text-white' ?>">
+                <span data-en="Year <?= $y ?>" data-ar="سنة <?= $y ?>">Year <?= $y ?></span>
+              </a>
+            <?php endfor; ?>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <a href="<?= app_url('modules/production/liquid_transaction.php?type=out') ?>" class="px-3.5 py-2 text-xs font-medium text-slate-300 bg-[#112433] border border-[#1e3a50] hover:bg-[#102332] dark:hover:bg-neutral-700 rounded-xs flex items-center gap-1.5 transition-colors">
+            <i data-lucide="arrow-up-right" class="w-4 h-4 text-cyan-600 dark:text-cyan-400"></i>
+            <span data-en="Decant / Dispatch" data-ar="صرف / تفريغ">Decant / Dispatch</span>
+          </a>
+          <a href="<?= app_url('modules/production/liquid_transaction.php?type=in') ?>" class="btn-cta-orange inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white bg-amber-600 hover:bg-amber-500 active:bg-amber-700 transition-colors border border-amber-500 rounded-xs">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span data-en="Receive Shipment" data-ar="استلام شحنة سائل">Receive Shipment</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Reconciliation Formula Explanation Card -->
+      <div class="bg-[#0c1924] border border-[#1a3346] border-s-4 border-s-[#f97316] p-5 rounded-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <i data-lucide="calculator" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+              <h3 class="font-heading font-bold text-sm text-white" data-en="Produced vs. theoretical yield from liquid received (per-cylinder basis)" data-ar="الإنتاج الفعلي مقابل العائد النظري من السوائل المستلمة (على أساس الأسطوانات)">
+                Produced vs. theoretical yield from liquid received (per-cylinder basis)
+              </h3>
+            </div>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed" data-en="Calculated cylinders = liquid received (kg) ÷ gas mass of one standard cylinder. Factors are dynamically loaded from System Settings." data-ar="الأسطوانات المحسوبة = السوائل المستلمة (كجم) ÷ كتلة الغاز لأسطوانة معيارية. يتم تحميل المعاملات ديناميكياً من إعدادات النظام.">
+              Calculated cylinders = liquid received (kg) ÷ gas mass of one standard cylinder. Factors are dynamically loaded from System Settings.
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="px-2.5 py-1 rounded-xs text-[11px] font-mono font-medium bg-[#09151f] text-slate-200 border border-[#1e3a50] whitespace-nowrap">
+              38 L @ 140 BAR G
             </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
+            <a href="<?= app_url('modules/insights/system_settings.php') ?>" class="text-teal-400 dark:text-teal-400 hover:underline text-xs font-mono whitespace-nowrap" data-en="Edit Factors &rarr;" data-ar="تعديل المعاملات &larr;">
+              Edit Factors &rarr;
+            </a>
+          </div>
         </div>
+      </div>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
-
-            <div class="flex justify-between items-end mb-7">
+      <!-- Reconciliation Gas Tables Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <?php foreach ($reconciliation_data as $gas_name => $months_data): ?>
+          <?php 
+            $factor = getFactorForGas($gas_name, $pdo, $db_factors);
+            $gas_tank_id = $bulk_gas_ids[$gas_name] ?? 0;
+            $total_produced = 0;
+            $total_liquid = 0;
+            $total_calc = 0;
+            $total_diff = 0;
+          ?>
+          <div class="bg-[#0c1924] border border-[#1a3346] rounded-xs flex flex-col overflow-hidden border-s-4 border-s-[#f97316]">
+            
+            <!-- Gas Table Header -->
+            <div class="px-5 py-4 border-b border-[#1a3346] bg-[#09151f] flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div><?= gas_chip($gas_name, 'badge') ?></div>
                 <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2" style="color: var(--mute);">Production & Inventory</p>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Bulk Liquid Tracking</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Monitor main plant storage tanks, cryogenic liquid reserves, and raw material purity.</p>
+                  <h3 class="font-heading font-bold text-sm text-white"><?= htmlspecialchars($gas_name) ?></h3>
+                  <p class="text-[11px] font-mono text-slate-400"><?= number_format($factor, 2) ?> kg / cylinder</p>
                 </div>
-                <div class="flex gap-3">
-                    <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="arrow-down-to-line" class="w-4 h-4"></i>Receive Shipment
-                    </button>
-                    <button class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="arrow-up-from-line" class="w-4 h-4"></i>Dispatch to Filling
-                    </button>
-                </div>
+              </div>
+              <?php if ($gas_tank_id > 0): ?>
+                <a href="<?= app_url('modules/production/liquid_profile.php?id=' . urlencode($gas_tank_id)) ?>" class="px-2.5 py-1 text-xs font-mono text-slate-300 bg-[#112433] border border-[#1e3a50] hover:bg-[#102332] dark:hover:bg-neutral-700 rounded-xs flex items-center gap-1.5 transition-colors">
+                  <i data-lucide="gauge" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i>
+                  <span>Tank Profile</span>
+                </a>
+              <?php endif; ?>
             </div>
+            
+            <!-- Table Content -->
+            <div class="overflow-x-auto flex-1">
+              <table class="w-full text-left rtl:text-right border-collapse text-xs" style="min-width: 480px;">
+                <thead>
+                  <tr class="bg-[#102230]/75 bg-[#112433]/60 border-b border-[#1a3346] text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                    <th class="px-4 py-2.5 font-semibold" data-en="Month" data-ar="الشهر">Month</th>
+                    <th class="px-4 py-2.5 font-semibold text-right rtl:text-left" data-en="Produced" data-ar="المنتج">Produced</th>
+                    <th class="px-4 py-2.5 font-semibold text-right rtl:text-left" data-en="Liquid (kg)" data-ar="السائل (كجم)">Liquid (kg)</th>
+                    <th class="px-4 py-2.5 font-semibold text-right rtl:text-left" data-en="Calc. cyls" data-ar="الأسطوانات المحسوبة">Calc. cyls</th>
+                    <th class="px-4 py-2.5 font-semibold text-right rtl:text-left" data-en="Diff" data-ar="الفرق">Diff</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#152a3a] font-mono">
+                  <?php foreach ($months as $m_num => $m_name): ?>
+                    <?php 
+                      $produced = $months_data[$m_num]['produced'];
+                      $liquid = $months_data[$m_num]['liquid'];
+                      $calc_cyls = ($liquid > 0 && $factor > 0) ? round($liquid / $factor) : 0;
+                      $diff = $calc_cyls - $produced;
+                      
+                      $total_produced += $produced;
+                      $total_liquid += $liquid;
+                      $total_calc += $calc_cyls;
+                      $total_diff += $diff;
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Storage Capacity</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_capacity) ?> <span class="text-[14px] text-[var(--mute)]">L</span></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);">Across all plant reservoirs</span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Current Liquid Stock</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_current) ?> <span class="text-[14px] text-[var(--mute)]">L</span></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span class="pill" style="background: #EAF1E7; color: #45663F;">
-                            <i data-lucide="droplet" class="w-3 h-3"></i><?= $overall_pct ?>% of total capacity
-                        </span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Daily Vaporization Rate</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);">2,450 <span class="text-[14px] text-[var(--mute)]">L/day</span></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span class="pill" style="background: #FBF3DF; color: #7A5E1E;">
-                            <i data-lucide="activity" class="w-3 h-3"></i>Average processing draw
-                        </span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Incoming Shipments</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);">1</h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);">Scheduled for tomorrow (LPG)</span>
-                    </div>
-                </div>
+                      $diff_color = 'text-neutral-400 dark:text-neutral-500';
+                      $diff_prefix = '';
+                      if ($diff > 0) {
+                        $diff_color = 'text-rose-600 dark:text-rose-400 font-semibold';
+                        $diff_prefix = '+';
+                      } elseif ($diff < 0) {
+                        $diff_color = 'text-emerald-600 dark:text-emerald-400 font-semibold';
+                      }
+                    ?>
+                    <tr class="hover:bg-[#102332] transition-colors">
+                      <td class="px-4 py-2.5 text-slate-400 font-sans">
+                        <span data-en="<?= $m_name ?>" data-ar="<?= $months_ar[$m_num] ?>"><?= $m_name ?></span>
+                      </td>
+                      <td class="px-4 py-2.5 text-right rtl:text-left text-white tabular-nums"><?= number_format($produced) ?></td>
+                      <td class="px-4 py-2.5 text-right rtl:text-left text-white tabular-nums"><?= number_format($liquid) ?></td>
+                      <td class="px-4 py-2.5 text-right rtl:text-left text-white tabular-nums"><?= number_format($calc_cyls) ?></td>
+                      <td class="px-4 py-2.5 text-right rtl:text-left <?= $diff_color ?> tabular-nums"><?= $diff_prefix . number_format($diff) ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                  
+                  <?php 
+                    $tot_diff_color = 'text-neutral-400 dark:text-neutral-500';
+                    $tot_diff_prefix = '';
+                    if ($total_diff > 0) {
+                      $tot_diff_color = 'text-rose-600 dark:text-rose-400 font-bold';
+                      $tot_diff_prefix = '+';
+                    } elseif ($total_diff < 0) {
+                      $tot_diff_color = 'text-emerald-600 dark:text-emerald-400 font-bold';
+                    }
+                  ?>
+                  <tr class="bg-[#102230]/75 bg-[#112433]/80 border-t border-[#1e3a50] font-bold">
+                    <td class="px-4 py-3 font-sans text-white" data-en="Total" data-ar="الإجمالي">Total</td>
+                    <td class="px-4 py-3 text-right rtl:text-left text-white tabular-nums"><?= number_format($total_produced) ?></td>
+                    <td class="px-4 py-3 text-right rtl:text-left text-white tabular-nums"><?= number_format($total_liquid) ?></td>
+                    <td class="px-4 py-3 text-right rtl:text-left text-white tabular-nums"><?= number_format($total_calc) ?></td>
+                    <td class="px-4 py-3 text-right rtl:text-left <?= $tot_diff_color ?> tabular-nums"><?= $tot_diff_prefix . number_format($total_diff) ?></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
+          </div>
+        <?php endforeach; ?>
+        
+        <?php if(empty($reconciliation_data)): ?>
+          <div class="col-span-full bg-[#0c1924] border border-[#1a3346] rounded-xs p-8 text-center text-xs text-slate-400" data-en="No bulk gas materials found in inventory. Please add Bulk Gas items to begin reconciliation." data-ar="لم يتم العثور على مواد غاز سائب في المخزون. يرجى إضافة عناصر غاز سائب لبدء المطابقة.">
+            No bulk gas materials found in inventory. Please add Bulk Gas items to begin reconciliation.
+          </div>
+        <?php endif; ?>
+      </div>
 
-            <div class="card rounded-md flex flex-col overflow-hidden">
-                <div class="px-6 pt-5 border-b" style="border-color: var(--line-soft);">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-[15px] font-semibold tracking-tight" style="color: var(--ink);">Plant Tanks Overview</h3>
-                        <div class="flex items-center gap-3">
-                            <select class="border rounded-sm text-[12.5px] py-1.5 px-2.5" style="border-color: var(--line); color: var(--ink);">
-                                <option>All Tanks</option>
-                                <option>Cryogenic (LOX/LIN/LAR)</option>
-                                <option>Pressurized (LPG)</option>
-                            </select>
-                            <button class="flex items-center justify-center w-8 h-8 border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i></button>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">Live Telemetry</span>
-                        <span class="tab-item">Delivery History</span>
-                        <span class="tab-item">Purity Logs</span>
-                    </div>
-                </div>
+    </div>
+  </main>
 
-                <div class="overflow-x-auto flex-1">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft);">
-                                <th class="pl-6 pr-3 py-3 font-medium">Tank ID & Name</th>
-                                <th class="px-3 py-3 font-medium">Stored Material</th>
-                                <th class="px-3 py-3 font-medium">Current Level</th>
-                                <th class="px-3 py-3 font-medium text-right">Pressure / Purity</th>
-                                <th class="px-3 py-3 font-medium">Last Received</th>
-                                <th class="px-3 py-3 font-medium">Status</th>
-                                <th class="pr-6 py-3 font-medium text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($plant_tanks as $tank): ?>
-                            <?php
-                                $level_pct = $tank['capacity'] > 0 ? round(($tank['current'] / $tank['capacity']) * 100) : 0;
-                                $statusObj = $statusStyles[$tank['status']];
-                                
-                                $barColor = '#45663F';
-                                if ($level_pct <= 15) $barColor = '#963B33';
-                                elseif ($level_pct < 30) $barColor = '#9A7B2E';
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-3 py-4">
-                                    <div class="flex flex-col">
-                                        <span class="font-medium" style="color: var(--ink);"><?= htmlspecialchars($tank['tank_name']) ?></span>
-                                        <span class="text-[11.5px] mono" style="color: var(--mute);"><?= htmlspecialchars($tank['id']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-4 font-medium" style="color: var(--ink);"><?= htmlspecialchars($tank['gas']) ?></td>
-                                <td class="px-3 py-4 w-48">
-                                    <div class="flex flex-col gap-1.5">
-                                        <div class="flex justify-between items-end text-[12px] mono num">
-                                            <span style="color: var(--ink);"><?= number_format($tank['current']) ?> L</span>
-                                            <span style="color: var(--mute);"><?= $level_pct ?>%</span>
-                                        </div>
-                                        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background: var(--line-soft);">
-                                            <div class="h-full rounded-full" style="width: <?= $level_pct ?>%; background: <?= $barColor ?>;"></div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-4 text-right">
-                                    <div class="flex flex-col">
-                                        <span class="font-medium num" style="color: var(--ink);"><?= number_format($tank['pressure'], 1) ?> <span class="text-[11px] text-[var(--mute)]">BAR</span></span>
-                                        <span class="text-[11.5px] mono" style="color: var(--mute);">Purity: <?= htmlspecialchars($tank['purity']) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-4 num text-[12.5px]" style="color: var(--mute);">
-                                    <?= date('M d, Y', strtotime($tank['last_fill'])) ?><br>
-                                    <span class="text-[11px]"><?= date('H:i', strtotime($tank['last_fill'])) ?></span>
-                                </td>
-                                <td class="px-3 py-4">
-                                    <span class="pill" style="background: <?= $statusObj['bg'] ?>; color: <?= $statusObj['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $statusObj['dot'] ?>;"></span><?= $statusObj['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-4 text-right">
-                                    <div class="flex items-center justify-end gap-3">
-                                        <button class="transition-colors bg-transparent border-none cursor-pointer" style="color: var(--mute);" title="View Telemetry" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                                        </button>
-                                        <button class="transition-colors bg-transparent border-none cursor-pointer" style="color: var(--mute);" title="Log Drawing" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M12 2v20"/><path d="m17 17-5 5-5-5"/><path d="M2 12h20"/></svg>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing all <?= count($plant_tanks) ?> registered plant tanks</span>
-                    <div class="flex items-center gap-1.5">
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors opacity-50 cursor-not-allowed" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
-                        <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors opacity-50 cursor-not-allowed" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-    </main>
-
-    <script>
-        lucide.createIcons();
-    </script>
+  <script>
+    lucide.createIcons();
+  </script>
 </body>
 </html>

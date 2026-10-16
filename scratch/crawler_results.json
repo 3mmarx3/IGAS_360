@@ -1,0 +1,893 @@
+{
+    "auth\/login.php": {
+        "file": "auth\/login.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 14917,
+        "title": "Command Center Login | I-GAS Enterprise"
+    },
+    "auth\/logout.php": {
+        "file": "auth\/logout.php",
+        "status": "redirect",
+        "http_code": 302,
+        "exception": null,
+        "errors": [],
+        "output_len": 0,
+        "title": ""
+    },
+    "index.php": {
+        "file": "index.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 69025,
+        "title": "Command Center | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/add_followup.php": {
+        "file": "modules\/crm_sales\/add_followup.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 43244,
+        "title": "Add Follow-up | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/client_activity.php": {
+        "file": "modules\/crm_sales\/client_activity.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 42343,
+        "title": "Client Activity Log | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/client_contracts.php": {
+        "file": "modules\/crm_sales\/client_contracts.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 51622,
+        "title": "Client Contracts | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/client_profile.php": {
+        "file": "modules\/crm_sales\/client_profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 54666,
+        "title": "Saudi Basic Industries Corp (SABIC) | Customer 360 | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/client_transactions.php": {
+        "file": "modules\/crm_sales\/client_transactions.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 51170,
+        "title": "Saudi Basic Industries Corp (SABIC) | Transactions & Statement | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/clients_directory.php": {
+        "file": "modules\/crm_sales\/clients_directory.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 65594,
+        "title": "Clients Directory | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/collections_invoices.php": {
+        "file": "modules\/crm_sales\/collections_invoices.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 76714,
+        "title": "Collections & Invoices | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/contract_details.php": {
+        "file": "modules\/crm_sales\/contract_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 51691,
+        "title": "Contract CNT-2025-001 | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/draft_contract.php": {
+        "file": "modules\/crm_sales\/draft_contract.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 50076,
+        "title": "Draft Master Contract | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/edit_client.php": {
+        "file": "modules\/crm_sales\/edit_client.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 51932,
+        "title": "Edit Profile - Saudi Basic Industries Corp (SABIC) | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/follow_ups.php": {
+        "file": "modules\/crm_sales\/follow_ups.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52098,
+        "title": "Follow-up Reminders | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/followup_reminders.php": {
+        "file": "modules\/crm_sales\/followup_reminders.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52098,
+        "title": "Follow-up Reminders | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/load_supplier_products.php": {
+        "file": "modules\/crm_sales\/load_supplier_products.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 15,
+        "title": ""
+    },
+    "modules\/crm_sales\/new_calloff.php": {
+        "file": "modules\/crm_sales\/new_calloff.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 57851,
+        "title": "Call-off Order Dispatch | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/new_client.php": {
+        "file": "modules\/crm_sales\/new_client.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 58744,
+        "title": "New Client Account | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/new_order.php": {
+        "file": "modules\/crm_sales\/new_order.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52020,
+        "title": "Create Purchase Order | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/new_quotation.php": {
+        "file": "modules\/crm_sales\/new_quotation.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 59052,
+        "title": "Commercial Quotation Builder | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/order_details.php": {
+        "file": "modules\/crm_sales\/order_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 58389,
+        "title": "Order PO-3001 | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/purchase_orders.php": {
+        "file": "modules\/crm_sales\/purchase_orders.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 66138,
+        "title": "Purchase Orders | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/quotation_details.php": {
+        "file": "modules\/crm_sales\/quotation_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 45540,
+        "title": "QT-2026-001 Details | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/quotations.php": {
+        "file": "modules\/crm_sales\/quotations.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 58645,
+        "title": "Sales &amp; Quotations | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/renew_contract.php": {
+        "file": "modules\/crm_sales\/renew_contract.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47068,
+        "title": "Renew Contract CNT-2025-001 | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/rep_profile.php": {
+        "file": "modules\/crm_sales\/rep_profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47994,
+        "title": "Tariq Mahmoud | Sales Cockpit | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/sales_performance.php": {
+        "file": "modules\/crm_sales\/sales_performance.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 44227,
+        "title": "Sales Performance & Commissions | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/sales_reports.php": {
+        "file": "modules\/crm_sales\/sales_reports.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 43678,
+        "title": "Sales Reports & Analytics | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/sales_reps.php": {
+        "file": "modules\/crm_sales\/sales_reps.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 56592,
+        "title": "Sales Team Directory | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/view_invoice.php": {
+        "file": "modules\/crm_sales\/view_invoice.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 46210,
+        "title": "INV-2026-001 | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/view_order.php": {
+        "file": "modules\/crm_sales\/view_order.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 46847,
+        "title": "Order PO-3001 Manifest | I-GAS Enterprise"
+    },
+    "modules\/crm_sales\/view_quotation.php": {
+        "file": "modules\/crm_sales\/view_quotation.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 44342,
+        "title": "QT-2026-001 | Formal Quotation | I-GAS"
+    },
+    "modules\/finance\/cash_flow.php": {
+        "file": "modules\/finance\/cash_flow.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 53389,
+        "title": "Cash Flow & Liquidity | I-GAS Industrial"
+    },
+    "modules\/finance\/financial_reports.php": {
+        "file": "modules\/finance\/financial_reports.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 56045,
+        "title": "Financial Reports & Master Ledger | I-GAS Industrial"
+    },
+    "modules\/insights\/analytics.php": {
+        "file": "modules\/insights\/analytics.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 49119,
+        "title": "Analytics & Plant Performance | I-GAS Industrial"
+    },
+    "modules\/insights\/compliance.php": {
+        "file": "modules\/insights\/compliance.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 60781,
+        "title": "Compliance & Safety Regulations | I-GAS Industrial"
+    },
+    "modules\/insights\/partner_approvals.php": {
+        "file": "modules\/insights\/partner_approvals.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 85009,
+        "title": "Accounts Control & Review Queue | I-GAS Industrial"
+    },
+    "modules\/insights\/system_settings.php": {
+        "file": "modules\/insights\/system_settings.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 67221,
+        "title": "I-GAS Enterprise Systems | System Settings"
+    },
+    "modules\/insights\/team_access.php": {
+        "file": "modules\/insights\/team_access.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 108625,
+        "title": "Directory & Access Control | I-GAS Industrial"
+    },
+    "modules\/logistics_fleet\/dispatch_delivery.php": {
+        "file": "modules\/logistics_fleet\/dispatch_delivery.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 61161,
+        "title": "Scheduled Gas Delivery Trips | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/dispatch_details.php": {
+        "file": "modules\/logistics_fleet\/dispatch_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 49462,
+        "title": "Manifest MAN-2026-001 | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/driver_profile.php": {
+        "file": "modules\/logistics_fleet\/driver_profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 53678,
+        "title": "Operator Dossier: Hassan Ali Al-Ghamdi | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/drivers_directory.php": {
+        "file": "modules\/logistics_fleet\/drivers_directory.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 64531,
+        "title": "Hazmat Drivers Directory | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/edit_driver.php": {
+        "file": "modules\/logistics_fleet\/edit_driver.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47792,
+        "title": "Edit Driver: DRV-01 | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/licenses_alerts.php": {
+        "file": "modules\/logistics_fleet\/licenses_alerts.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 84018,
+        "title": "Licenses, Permits & Regulatory Alerts | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/logistics_reports.php": {
+        "file": "modules\/logistics_fleet\/logistics_reports.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 55735,
+        "title": "Logistics & Fleet Reports | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/maintenance_details.php": {
+        "file": "modules\/logistics_fleet\/maintenance_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 51565,
+        "title": "Service Ticket MNT-2025-001 | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/maintenance_fuel.php": {
+        "file": "modules\/logistics_fleet\/maintenance_fuel.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 59735,
+        "title": "Maintenance & Fuel Tracking | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/manual_entry.php": {
+        "file": "modules\/logistics_fleet\/manual_entry.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 46959,
+        "title": "Manual Log Entry | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/new_dispatch.php": {
+        "file": "modules\/logistics_fleet\/new_dispatch.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 50179,
+        "title": "Schedule Delivery Manifest | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/new_driver.php": {
+        "file": "modules\/logistics_fleet\/new_driver.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 45513,
+        "title": "Accredit Hazmat Driver | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/new_log_entry.php": {
+        "file": "modules\/logistics_fleet\/new_log_entry.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 46644,
+        "title": "Record Vehicle Telemetry Event | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/new_maintenance.php": {
+        "file": "modules\/logistics_fleet\/new_maintenance.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47461,
+        "title": "New Service Ticket | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/new_vehicle.php": {
+        "file": "modules\/logistics_fleet\/new_vehicle.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 46612,
+        "title": "Register Hazmat Vehicle | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/order_details.php": {
+        "file": "modules\/logistics_fleet\/order_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 50494,
+        "title": "Order PO-3001 | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/vehicle_logs.php": {
+        "file": "modules\/logistics_fleet\/vehicle_logs.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52535,
+        "title": "Carrier Telemetry Dossier FL-01 | I-GAS Control Room"
+    },
+    "modules\/logistics_fleet\/vehicles_fleet.php": {
+        "file": "modules\/logistics_fleet\/vehicles_fleet.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 69862,
+        "title": "Gas Fleet & Tanker Transport | I-GAS Control Room"
+    },
+    "modules\/main\/create_order.php": {
+        "file": "modules\/main\/create_order.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 59117,
+        "title": "Create Purchase Request | I-GAS Industrial"
+    },
+    "modules\/main\/partner_profile.php": {
+        "file": "modules\/main\/partner_profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 44863,
+        "title": "Saudi Basic Industries Corp (SABIC) | I-GAS Industrial"
+    },
+    "modules\/main\/profile.php": {
+        "file": "modules\/main\/profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52988,
+        "title": "My Operator Profile | I-GAS Enterprise"
+    },
+    "modules\/main\/supplier_catalog.php": {
+        "file": "modules\/main\/supplier_catalog.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52614,
+        "title": "Product Catalog Management | I-GAS Supplier Portal"
+    },
+    "modules\/production\/cost_profit.php": {
+        "file": "modules\/production\/cost_profit.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 60802,
+        "title": "Cost & Profit Analysis | Financials | I-GAS Control Room"
+    },
+    "modules\/production\/customer_tanks.php": {
+        "file": "modules\/production\/customer_tanks.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 60031,
+        "title": "Customer Tanks | I-GAS Enterprise"
+    },
+    "modules\/production\/cylinder_details.php": {
+        "file": "modules\/production\/cylinder_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47900,
+        "title": "O2-MED-50L | I-GAS Enterprise"
+    },
+    "modules\/production\/cylinders_inventory.php": {
+        "file": "modules\/production\/cylinders_inventory.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 65691,
+        "title": "Cylinders Inventory | I-GAS Enterprise"
+    },
+    "modules\/production\/daily_log_shifts.php": {
+        "file": "modules\/production\/daily_log_shifts.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 50770,
+        "title": "Daily Shift Logs | Production | I-GAS Control Room"
+    },
+    "modules\/production\/edit_supplier.php": {
+        "file": "modules\/production\/edit_supplier.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47791,
+        "title": "Edit Supplier Profile | I-GAS Enterprise"
+    },
+    "modules\/production\/gas_details.php": {
+        "file": "modules\/production\/gas_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52056,
+        "title": "Argon \/ CO2 (80\/20) | Gas Details | I-GAS Control Room"
+    },
+    "modules\/production\/gases_mixtures.php": {
+        "file": "modules\/production\/gases_mixtures.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 62059,
+        "title": "Gases & Mixtures | I-GAS Enterprise"
+    },
+    "modules\/production\/liquid_profile.php": {
+        "file": "modules\/production\/liquid_profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 45153,
+        "title": "Liquid Oxygen (LOX) | I-GAS Enterprise"
+    },
+    "modules\/production\/liquid_tracking.php": {
+        "file": "modules\/production\/liquid_tracking.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 38306,
+        "title": "Liquid Reconciliation | I-GAS Enterprise"
+    },
+    "modules\/production\/liquid_transaction.php": {
+        "file": "modules\/production\/liquid_transaction.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 44526,
+        "title": "Receive Liquid Shipment | I-GAS Enterprise"
+    },
+    "modules\/production\/material_details.php": {
+        "file": "modules\/production\/material_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47603,
+        "title": "Liquid Oxygen (LOX) | I-GAS Enterprise"
+    },
+    "modules\/production\/monthly_yearly_production.php": {
+        "file": "modules\/production\/monthly_yearly_production.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 43777,
+        "title": "Monthly & Yearly Production | Analytics | I-GAS Control Room"
+    },
+    "modules\/production\/new_cylinder.php": {
+        "file": "modules\/production\/new_cylinder.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52291,
+        "title": "Register Cylinder Batch | I-GAS Enterprise"
+    },
+    "modules\/production\/new_material.php": {
+        "file": "modules\/production\/new_material.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 49315,
+        "title": "New Material Entry | I-GAS Enterprise"
+    },
+    "modules\/production\/new_mixture.php": {
+        "file": "modules\/production\/new_mixture.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 58150,
+        "title": "Formulate Mix | Gas Production | I-GAS Control Room"
+    },
+    "modules\/production\/new_purchase_order.php": {
+        "file": "modules\/production\/new_purchase_order.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 50014,
+        "title": "New Purchase Order | I-GAS Enterprise"
+    },
+    "modules\/production\/new_shift_log.php": {
+        "file": "modules\/production\/new_shift_log.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 45558,
+        "title": "Start New Shift | Production | I-GAS Control Room"
+    },
+    "modules\/production\/new_supplier.php": {
+        "file": "modules\/production\/new_supplier.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47309,
+        "title": "New Supplier | I-GAS Enterprise"
+    },
+    "modules\/production\/new_tank.php": {
+        "file": "modules\/production\/new_tank.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 44918,
+        "title": "Register Tank Asset | I-GAS Enterprise"
+    },
+    "modules\/production\/production_reports.php": {
+        "file": "modules\/production\/production_reports.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 43742,
+        "title": "Production Reports | Analytics | I-GAS Control Room"
+    },
+    "modules\/production\/raw_materials.php": {
+        "file": "modules\/production\/raw_materials.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 57159,
+        "title": "Raw Materials | I-GAS Enterprise"
+    },
+    "modules\/production\/shift_details.php": {
+        "file": "modules\/production\/shift_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 48471,
+        "title": "SHF-0501 | Shift Details | I-GAS Control Room"
+    },
+    "modules\/production\/supplier_profile.php": {
+        "file": "modules\/production\/supplier_profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 51929,
+        "title": "Air Liquide Industrial Middle East | I-GAS Enterprise"
+    },
+    "modules\/production\/suppliers_directory.php": {
+        "file": "modules\/production\/suppliers_directory.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 59091,
+        "title": "Suppliers Directory | I-GAS Enterprise"
+    },
+    "modules\/production\/tank_details.php": {
+        "file": "modules\/production\/tank_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 43810,
+        "title": "TNK-LOX-901 Details | I-GAS Enterprise"
+    },
+    "modules\/production\/view_order.php": {
+        "file": "modules\/production\/view_order.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 43892,
+        "title": "Order PO-3001 | Orders | I-GAS Control Room"
+    },
+    "modules\/production\/yield_details.php": {
+        "file": "modules\/production\/yield_details.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 53750,
+        "title": "Batch BATCH-AR-2026-03 | Yield Analysis | I-GAS Control Room"
+    },
+    "modules\/production\/yield_loss_reports.php": {
+        "file": "modules\/production\/yield_loss_reports.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 52801,
+        "title": "Yield & Loss Reports | Production | I-GAS Control Room"
+    },
+    "modules\/tools\/gas_converter.php": {
+        "file": "modules\/tools\/gas_converter.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 53912,
+        "title": "Comprehensive Gas Converter | I-GAS Industrial"
+    },
+    "modules\/tools\/style_guide.php": {
+        "file": "modules\/tools\/style_guide.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 83871,
+        "title": "Visual Identity Style Guide | I-GAS Enterprise"
+    },
+    "modules\/tools\/unit_converter.php": {
+        "file": "modules\/tools\/unit_converter.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 47008,
+        "title": "Engineering Unit Converter | I-GAS Industrial"
+    },
+    "modules\/warehouse\/new_warehouse.php": {
+        "file": "modules\/warehouse\/new_warehouse.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 45394,
+        "title": "New Warehouse Depot | I-GAS Control Room"
+    },
+    "modules\/warehouse\/new_warehouse_item.php": {
+        "file": "modules\/warehouse\/new_warehouse_item.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 44231,
+        "title": "New Inventory Item | I-GAS Control Room"
+    },
+    "modules\/warehouse\/warehouse_profile.php": {
+        "file": "modules\/warehouse\/warehouse_profile.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 48891,
+        "title": "Warehouse Profile: Central Cryogenic Plant - Jubail | I-GAS Control Room"
+    },
+    "modules\/warehouse\/warehouses.php": {
+        "file": "modules\/warehouse\/warehouses.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 55618,
+        "title": "Warehouses Directory | I-GAS Control Room"
+    },
+    "modules\/warehouse\/withdraw.php": {
+        "file": "modules\/warehouse\/withdraw.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 51058,
+        "title": "Manage Stock Allocation & Transfer | I-GAS Industrial"
+    },
+    "rep_dashboard.php": {
+        "file": "rep_dashboard.php",
+        "status": "ok",
+        "http_code": 200,
+        "exception": null,
+        "errors": [],
+        "output_len": 53785,
+        "title": "Sales Rep Pipeline & Client Hub | I-GAS Industrial"
+    }
+}

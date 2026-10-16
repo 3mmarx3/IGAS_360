@@ -1,10 +1,17 @@
 <?php
-session_start();
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) {
+  session_start();
+}
+
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission('production.view');
 
 $active_page = 'daily_log_shifts';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Production', 'Daily Shift Logs'];
+$base_url  = '../../';
+$breadcrumb = ['I-GAS', 'Production', 'Daily Shift Logs'];
 
 $totalStmt = $pdo->query("SELECT COUNT(*) FROM shift_logs");
 $total_shifts = $totalStmt->fetchColumn() ?: 0;
@@ -12,6 +19,7 @@ $total_shifts = $totalStmt->fetchColumn() ?: 0;
 $activeStmt = $pdo->query("SELECT shift_cycle FROM shift_logs WHERE status = 'in_progress' ORDER BY id DESC LIMIT 1");
 $active_cycle = $activeStmt->fetchColumn();
 $active_shift = $active_cycle ? $active_cycle . ' Shift' : 'None';
+$active_shift_ar = $active_cycle ? ($active_cycle === 'Morning' ? 'الوردية الصباحية' : ($active_cycle === 'Evening' ? 'الوردية المسائية' : 'وردية الليل')) : 'لا توجد';
 
 $outputStmt = $pdo->query("SELECT SUM(actual_output) FROM shift_logs WHERE DATE_FORMAT(operational_date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE, '%Y-%m')");
 $total_output = $outputStmt->fetchColumn() ?: 0;
@@ -23,269 +31,385 @@ $shiftsStmt = $pdo->query("SELECT * FROM shift_logs ORDER BY operational_date DE
 $shifts = $shiftsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $statusStyles = [
-    'in_progress' => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Active Shift'],
-    'completed'   => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Signed Off'],
-    'flagged'     => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Flagged / Issues'],
+  'in_progress' => ['bg' => 'bg-amber-500/10 text-amber-400 dark:text-amber-400 border-amber-500/30', 'dot' => 'bg-amber-500', 'label' => 'Active Shift', 'label_ar' => 'وردية نشطة'],
+  'completed'  => ['bg' => 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30', 'dot' => 'bg-emerald-500', 'label' => 'Signed Off', 'label_ar' => 'تم الاعتماد'],
+  'flagged'   => ['bg' => 'bg-rose-500/10 text-rose-400 dark:text-rose-400 border-rose-500/30', 'dot' => 'bg-rose-500', 'label' => 'Flagged / Issues', 'label_ar' => 'مبلغ / مشاكل'],
 ];
 
 function getShiftTimeFormat($cycle) {
-    if ($cycle === 'Morning') return 'Morning (06:00 - 14:00)';
-    if ($cycle === 'Evening') return 'Evening (14:00 - 22:00)';
-    if ($cycle === 'Night') return 'Night (22:00 - 06:00)';
-    return $cycle;
+  if ($cycle === 'Morning') return 'Morning (06:00 - 14:00)';
+  if ($cycle === 'Evening') return 'Evening (14:00 - 22:00)';
+  if ($cycle === 'Night') return 'Night (22:00 - 06:00)';
+  return $cycle;
+}
+
+function getShiftTimeFormatAr($cycle) {
+  if ($cycle === 'Morning') return 'الصباحية (06:00 - 14:00)';
+  if ($cycle === 'Evening') return 'المسائية (14:00 - 22:00)';
+  if ($cycle === 'Night') return 'الليلية (22:00 - 06:00)';
+  return $cycle;
 }
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars($lang ?? 'en') ?>" dir="<?= ($lang ?? 'en') === 'ar' ? 'rtl' : 'ltr' ?>" class="<?= ($theme ?? 'light') === 'dark' ? 'dark' : '' ?>">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Shift Logs | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <link rel="stylesheet" href="../../assets/css/main.css">
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Shift Logs | Production | I-GAS Control Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Oxanium:wght@400;500;600;700;800&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/css/theme.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              DEFAULT: '#0B6E8A',
+              bright: '#19B5C9',
+              dark: '#0A1B26',
+            },
+            safety: {
+              orange: '#FF6B1A',
+            },
+          },
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'Cairo', 'sans-serif'],
+            heading: ['Oxanium', 'Reem Kufi', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          },
         }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
-        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-
-        .card { background: var(--paper); border: 1px solid var(--line-soft); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-
-        .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 3px; line-height: 1; }
-        .checkbox-sq { width: 14px; height: 14px; border: 1px solid var(--line); border-radius: 2px; display: inline-block; background: var(--paper); }
-        
-        .tab-item { cursor: pointer; padding-bottom: 12px; border-bottom: 2px solid transparent; transition: all 0.15s ease; }
-        .tab-item.active { border-bottom-color: var(--ink); color: var(--ink) !important; }
-        .tab-item:not(.active):hover { color: var(--ink-soft); }
-    </style>
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+<?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+<main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
+  <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-    <?php include '../../includes/header.php'; ?>
+  <!-- Industrial Telemetry Sub-header -->
+  <div class="h-9 border-b border-[#1a3346] bg-[#102230]/80 bg-[#0c1924]/80 flex items-center px-4 sm:px-6 md:px-8 gap-3 sm:gap-6 flex-shrink-0 overflow-x-auto whitespace-nowrap text-[11px]">
+    <span class="flex items-center gap-1.5 font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-medium">
+      <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+      PLANT OPERATIONS NOMINAL // SHIFT MONITOR ONLINE
+    </span>
+    <span class="w-px h-3 bg-neutral-300 dark:bg-neutral-700"></span>
+    <span class="text-slate-400 font-mono">PLANT: JEDDAH INDUSTRIAL BULK #4</span>
+    <span class="w-px h-3 bg-neutral-300 dark:bg-neutral-700"></span>
+    <span class="text-slate-400 font-mono">CURRENT CYCLE: <?= htmlspecialchars($active_shift) ?></span>
+  </div>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
+  <!-- Main Content Container -->
+  <div class="p-4 sm:p-6 md:p-8 space-y-6">
+
+    <!-- Page Header Card -->
+    <div class="border border-[#1a3346] bg-[#0c1924] rounded-sm p-5 sm:p-6 border-s-4 border-s-[#f97316]">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">
+            PRODUCTION OPERATIONS // SHIFT MASTER REGISTRY
+          </div>
+          <h1 class="text-xl sm:text-2xl font-bold font-heading uppercase tracking-tight text-white flex items-center gap-2">
+            <?= icon('clock', 'w-6 h-6 text-teal-600 dark:text-teal-400') ?>
+            <span>Daily Shift Logs</span>
+          </h1>
+          <p class="text-xs text-slate-400 mt-1 font-mono">
+            Monitor plant operational shifts, production outputs, and safety handovers.
+          </p>
+        </div>
+
+        <!-- Single Primary CTA in Safety Valve Orange -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+          <button type="button" onclick="exportLogsData()" class="btn-secondary h-9 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 transition-colors">
+            <?= icon('download', 'w-4 h-4') ?>
+            <span>Export Logs</span>
+          </button>
+          <?php if (has_permission('production.create')): ?>
+          <a href="<?= app_url('modules/production/new_shift_log.php') ?>" class="btn-cta-orange h-9 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 transition-all">
+            <?= icon('plus', 'w-4 h-4') ?>
+            <span>Start New Shift</span>
+          </a>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bento KPI Grid (4 Cards) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Current Active Shift -->
+      <div class="border border-[#1a3346] bg-[#0c1924] rounded-sm p-4 border-s-4 border-s-[#f97316]">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-mono uppercase tracking-wider">ACTIVE SHIFT</span>
+          <?= icon('activity', 'w-4 h-4 text-teal-600 dark:text-teal-400') ?>
+        </div>
+        <div class="text-xl font-bold font-heading uppercase text-white">
+          <?= htmlspecialchars($active_shift) ?>
+        </div>
+        <div class="mt-3 flex items-center gap-1.5 text-xs font-mono">
+          <?php if ($active_shift !== 'None'): ?>
+            <span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-xs text-[11px] font-mono border bg-amber-500/10 text-amber-400 dark:text-amber-400 border-amber-500/30 whitespace-nowrap">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+              Logging in Progress
             </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
+          <?php else: ?>
+            <span class="text-neutral-500">No shift currently active</span>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <!-- Production Output MTD -->
+      <div class="border border-[#1a3346] bg-[#0c1924] rounded-sm p-4 border-s-4 border-s-[#f97316]">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-mono uppercase tracking-wider">OUTPUT (MTD)</span>
+          <?= icon('cylinder', 'w-4 h-4 text-teal-600 dark:text-teal-400') ?>
+        </div>
+        <div class="text-2xl font-bold font-mono tabular-nums text-white">
+          <?= number_format($total_output) ?>
+        </div>
+        <div class="mt-3 text-xs font-mono text-slate-400">
+          Cylinders filled this month
+        </div>
+      </div>
+
+      <!-- Total Shifts Logged -->
+      <div class="border border-[#1a3346] bg-[#0c1924] rounded-sm p-4 border-s-4 border-s-[#f97316]">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-mono uppercase tracking-wider">TOTAL SHIFTS</span>
+          <?= icon('archive', 'w-4 h-4 text-teal-600 dark:text-teal-400') ?>
+        </div>
+        <div class="text-2xl font-bold font-mono tabular-nums text-white">
+          <?= number_format($total_shifts) ?>
+        </div>
+        <div class="mt-3 text-xs font-mono text-slate-400">
+          Historical logs archived
+        </div>
+      </div>
+
+      <!-- Safety Alerts MTD -->
+      <div class="border border-[#1a3346] bg-[#0c1924] rounded-sm p-4 border-s-[3px] <?= $safety_alerts > 0 ? 'border-s-rose-600' : 'border-s-emerald-600' ?>">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-mono uppercase tracking-wider">SAFETY ALERTS (MTD)</span>
+          <?= icon('shield-alert', 'w-4 h-4 ' . ($safety_alerts > 0 ? 'text-rose-600' : 'text-emerald-600')) ?>
+        </div>
+        <div class="text-2xl font-bold font-mono tabular-nums <?= $safety_alerts > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400' ?>">
+          <?= number_format($safety_alerts) ?>
+        </div>
+        <div class="mt-3 text-xs font-mono">
+          <?php if ($safety_alerts > 0): ?>
+            <span class="text-rose-600 font-semibold flex items-center gap-1">
+              <?= icon('alert-triangle', 'w-3.5 h-3.5') ?>
+              Action required
+            </span>
+          <?php else: ?>
+            <span class="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <?= icon('check-circle', 'w-3.5 h-3.5') ?>
+              Zero safety incidents
+            </span>
+          <?php endif; ?>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Master Shift Registry Table Card -->
+    <div class="border border-[#1a3346] bg-[#0c1924] rounded-sm overflow-hidden">
+      
+      <!-- Table Header & Controls -->
+      <div class="p-4 border-b border-[#1a3346] bg-[#09151f] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <h2 class="text-xs font-bold font-heading uppercase tracking-wider text-white flex items-center gap-2">
+            <?= icon('list', 'w-4 h-4 text-teal-600 dark:text-teal-400') ?>
+            <span>Shift Handover Logs</span>
+          </h2>
+          <span class="text-xs font-mono text-neutral-500">(<span id="visibleCount" class="tabular-nums font-semibold text-slate-200"><?= count($shifts) ?></span> records)</span>
         </div>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
-
-            <div class="flex justify-between items-end mb-7">
-                <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2" style="color: var(--mute);">Production Operations</p>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Daily Shift Logs</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Monitor plant operational shifts, production outputs, and safety handovers.</p>
-                </div>
-                <div class="flex gap-3">
-                    <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="download" class="w-4 h-4"></i>Export Logs
-                    </button>
-                    <a href="new_shift_log.php" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="plus" class="w-4 h-4"></i>Start New Shift
-                    </a>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Current Active Shift</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight" style="color: var(--ink);"><?= htmlspecialchars($active_shift) ?></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <?php if($active_shift !== 'None'): ?>
-                        <span class="pill" style="background: #FBF3DF; color: #7A5E1E;">
-                            <i data-lucide="clock" class="w-3 h-3"></i>Logging in progress
-                        </span>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Production Output (MTD)</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_output) ?></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);">Cylinders filled this month</span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Total Shifts Logged</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($total_shifts) ?></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <span style="color: var(--mute);">Historical records verified</span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-5">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Safety Alerts (MTD)</p>
-                    <h3 class="text-[24px] font-semibold tracking-tight num" style="color: <?= $safety_alerts > 0 ? '#963B33' : 'var(--ink)' ?>;"><?= number_format($safety_alerts) ?></h3>
-                    <div class="mt-3 flex items-center text-[12px]">
-                        <?php if($safety_alerts > 0): ?>
-                            <span class="pill" style="background: #F8E9E7; color: #963B33;">
-                                <i data-lucide="alert-triangle" class="w-3 h-3"></i>Action required
-                            </span>
-                        <?php else: ?>
-                            <span class="pill" style="background: #EAF1E7; color: #45663F;">
-                                <i data-lucide="shield-check" class="w-3 h-3"></i>Zero incidents
-                            </span>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card rounded-md flex flex-col overflow-hidden">
-                <div class="px-6 pt-5 border-b" style="border-color: var(--line-soft);">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-[15px] font-semibold tracking-tight" style="color: var(--ink);">Shift Handover Logs</h3>
-                        <div class="flex items-center gap-3">
-                            <div class="relative">
-                                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2" style="color: var(--mute-soft);"></i>
-                                <input type="text" placeholder="Search shift ID or supervisor..." class="pl-8 pr-3 py-1.5 bg-white border rounded-sm text-[12.5px] w-56" style="border-color: var(--line);">
-                            </div>
-                            <select class="border rounded-sm text-[12.5px] py-1.5 px-2.5" style="border-color: var(--line); color: var(--ink);">
-                                <option>All Shifts</option>
-                                <option>Morning Shift</option>
-                                <option>Evening Shift</option>
-                                <option>Night Shift</option>
-                            </select>
-                            <button class="flex items-center justify-center w-8 h-8 border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i></button>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-6 text-[13px] font-medium">
-                        <span class="tab-item active">All Logs <span class="num text-[11px]" style="color: var(--mute-soft);"><?= count($shifts) ?></span></span>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto flex-1">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="text-[11px] uppercase tracking-[0.08em] border-b" style="color: var(--mute); border-color: var(--line-soft);">
-                                <th class="pl-6 pr-2 py-3 font-medium w-8"><span class="checkbox-sq"></span></th>
-                                <th class="px-3 py-3 font-medium">Shift Ref</th>
-                                <th class="px-3 py-3 font-medium">Date & Cycle</th>
-                                <th class="px-3 py-3 font-medium">Supervisor</th>
-                                <th class="px-3 py-3 font-medium text-right">Cylinders Filled</th>
-                                <th class="px-3 py-3 font-medium text-center">Alerts</th>
-                                <th class="px-3 py-3 font-medium">Status</th>
-                                <th class="pr-6 py-3 font-medium text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-[13.5px] divide-y" style="border-color: var(--line-soft);">
-                            <?php foreach ($shifts as $s): ?>
-                            <?php
-                                $statusKey = $s['status'] ?? 'in_progress';
-                                $statusObj = $statusStyles[$statusKey];
-                                $isFlagged = $statusKey === 'flagged';
-                                $rowColor = $isFlagged ? '#963B33' : 'var(--ink)';
-                            ?>
-                            <tr class="transition-colors" style="border-color: var(--line-soft);" onmouseover="this.style.background='var(--paper-dim)'" onmouseout="this.style.background='transparent'">
-                                <td class="pl-6 pr-2 py-3.5"><span class="checkbox-sq"></span></td>
-                                <td class="px-3 py-3.5 num font-medium" style="color: var(--ink);"><?= htmlspecialchars($s['shift_id']) ?></td>
-                                <td class="px-3 py-3.5">
-                                    <div class="flex flex-col">
-                                        <span class="font-medium mono" style="color: var(--ink);"><?= htmlspecialchars($s['operational_date']) ?></span>
-                                        <span class="text-[11px]" style="color: var(--mute);"><?= htmlspecialchars(getShiftTimeFormat($s['shift_cycle'])) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 font-medium" style="color: var(--ink);">
-                                    <div class="flex items-center gap-2">
-                                        <div class="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[9px] font-bold" style="color: var(--ink-soft);">
-                                            <?= htmlspecialchars(mb_substr($s['supervisor'], 0, 1)) ?>
-                                        </div>
-                                        <?= htmlspecialchars($s['supervisor']) ?>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3.5 text-right font-medium num" style="color: var(--ink);"><?= number_format($s['actual_output']) ?></td>
-                                <td class="px-3 py-3.5 text-center">
-                                    <?php if($s['safety_alerts'] > 0): ?>
-                                        <span class="inline-flex items-center justify-center w-5 h-5 rounded-sm bg-red-50 text-red-700 text-[11px] font-bold num"><?= $s['safety_alerts'] ?></span>
-                                    <?php else: ?>
-                                        <span class="text-[12px] text-gray-400">-</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="px-3 py-3.5">
-                                    <span class="pill" style="background: <?= $statusObj['bg'] ?>; color: <?= $statusObj['fg'] ?>;">
-                                        <span class="status-dot" style="background:<?= $statusObj['dot'] ?>;"></span><?= $statusObj['label'] ?>
-                                    </span>
-                                </td>
-                                <td class="pr-6 py-3.5 text-right flex items-center justify-end gap-3">
-                                    <a href="shift_details.php?id=<?= urlencode($s['id']) ?>" class="text-[12px] font-medium" style="color: var(--ink); border-bottom: 1px solid var(--ink); text-decoration: none;">View Log</a>
-                                    <button class="transition-colors" style="color: var(--mute);"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($shifts)): ?>
-                            <tr>
-                                <td colspan="8" class="text-center py-6 text-[13px]" style="color: var(--mute);">لا توجد ورديات مسجلة حالياً.</td>
-                            </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="px-6 py-3.5 border-t flex justify-between items-center" style="border-color: var(--line-soft);">
-                    <span class="text-[12px] mono" style="color: var(--mute);">Showing <?= count($shifts) ?> Logs</span>
-                    <div class="flex items-center gap-1.5">
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
-                        <button class="w-7 h-7 flex items-center justify-center rounded-sm text-[12px] font-medium mono" style="background: var(--ink); color: white;">1</button>
-                        <button class="w-7 h-7 flex items-center justify-center border rounded-sm transition-colors" style="border-color: var(--line); color: var(--mute);"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
-                    </div>
-                </div>
-            </div>
-
+        <!-- Search and Filters -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div class="relative flex items-center bg-[#07111a] border border-[#1e3a50] rounded-md px-3 h-9 focus-within:border-orange-500 w-full sm:w-64 md:w-72">
+                <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 mr-2.5 rtl:ml-2.5 shrink-0 pointer-events-none"></i>
+                <input type="text" id="searchInput" placeholder="Search Shift ID, Supervisor..." class="bg-transparent border-0 text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none w-full p-0">
+              </div>
+          <select id="shiftFilter" class="h-9 px-3 text-xs font-mono bg-[#07111a] border border-[#1e3a50] rounded-md text-slate-100 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/40 transition-all">
+            <option value="">All Shifts</option>
+            <option value="Morning">Morning Shift</option>
+            <option value="Evening">Evening Shift</option>
+            <option value="Night">Night Shift</option>
+          </select>
         </div>
-    </main>
+      </div>
 
-    <script>
-        lucide.createIcons();
-    </script>
+      <!-- Table Responsive Container -->
+      <div class="overflow-x-auto custom-scrollbar flex-1 w-full">
+        <table class="w-full text-left border-collapse text-xs" id="shiftsTable">
+          <thead>
+            <tr class="border-b border-[#1a3346] bg-[#102230]/60 dark:bg-[#060e14]/80 backdrop-blur-sm text-slate-400 font-mono uppercase tracking-wider">
+              <th class="py-3 px-4">SHIFT REF</th>
+              <th class="py-3 px-4">DATE & CYCLE</th>
+              <th class="py-3 px-4">SUPERVISOR</th>
+              <th class="py-3 px-4 text-right">CYLINDERS FILLED</th>
+              <th class="py-3 px-4 text-center">ALERTS</th>
+              <th class="py-3 px-4">STATUS</th>
+              <th class="py-3 px-4 text-right">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-[#152a3a] font-mono">
+            <?php foreach ($shifts as $s): ?>
+            <?php
+              $statusKey = $s['status'] ?? 'in_progress';
+              $statusObj = $statusStyles[$statusKey] ?? $statusStyles['in_progress'];
+            ?>
+            <tr class="hover:bg-[#102332] transition shift-row" data-cycle="<?= htmlspecialchars($s['shift_cycle']) ?>">
+              <td class="py-3 px-4 font-semibold text-white shift-id">
+                <?= htmlspecialchars($s['shift_id']) ?>
+              </td>
+              <td class="py-3 px-4">
+                <div class="font-medium text-slate-200 date-text">
+                  <?= htmlspecialchars($s['operational_date']) ?>
+                </div>
+                <div class="text-[11px] text-neutral-500 cycle-text">
+                  <?= htmlspecialchars(getShiftTimeFormat($s['shift_cycle'])) ?>
+                </div>
+              </td>
+              <td class="py-3 px-4 font-medium text-slate-200 supervisor-text">
+                <div class="flex items-center gap-2">
+                  <div class="w-5 h-5 rounded-xs border border-[#1e3a50] bg-[#09151f] flex items-center justify-center text-[10px] font-bold text-neutral-600 text-slate-300">
+                    <?= htmlspecialchars(mb_substr($s['supervisor'] ?? 'U', 0, 1)) ?>
+                  </div>
+                  <span><?= htmlspecialchars($s['supervisor']) ?></span>
+                </div>
+              </td>
+              <td class="py-3 px-4 text-right tabular-nums text-white font-bold">
+                <?= number_format($s['actual_output']) ?>
+              </td>
+              <td class="py-3 px-4 text-center">
+                <?php if ($s['safety_alerts'] > 0): ?>
+                  <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-xs text-[11px] font-bold border border-rose-500/30 bg-rose-500/10 text-rose-400 dark:text-rose-400 tabular-nums">
+                    <?= (int)$s['safety_alerts'] ?>
+                  </span>
+                <?php else: ?>
+                  <span class="text-neutral-400">-</span>
+                <?php endif; ?>
+              </td>
+              <td class="py-3 px-4">
+                <span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-xs text-[11px] font-mono border <?= $statusObj['bg'] ?>">
+                  <span class="w-1.5 h-1.5 rounded-full <?= $statusObj['dot'] ?>"></span>
+                  <?= $statusObj['label'] ?>
+                </span>
+              </td>
+              <td class="py-3 px-4 text-right">
+                <a href="<?= app_url('modules/production/shift_details.php?id=' . urlencode($s['shift_id'])) ?>" class="inline-flex items-center gap-1 text-teal-600 dark:text-teal-400 hover:underline font-semibold">
+                  <span>View Log</span>
+                  <?= icon('chevron-right', 'w-3.5 h-3.5 rtl:rotate-180') ?>
+                </a>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+            <?php if (empty($shifts)): ?>
+            <tr id="emptyStateRow">
+              <td colspan="7" class="py-8 text-center text-slate-400">
+                No shift logs recorded yet.
+              </td>
+            </tr>
+            <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Footer Pagination / Summary -->
+      <div class="px-5 py-3 border-t border-[#1a3346] bg-[#09151f] flex items-center justify-between text-xs font-mono text-neutral-500">
+        <span>Showing 1 to <span id="visibleSummary"><?= count($shifts) ?></span> of <?= count($shifts) ?> shift records</span>
+        <span class="text-[11px] text-neutral-400">Real-time sync active</span>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('searchInput');
+    const shiftFilter = document.getElementById('shiftFilter');
+    const rows = document.querySelectorAll('.shift-row');
+
+    function filterRows() {
+      const query = (searchInput.value || '').toLowerCase().trim();
+      const selectedCycle = shiftFilter.value;
+      let visibleCount = 0;
+
+      rows.forEach(row => {
+        const shiftIdEl = row.querySelector('.shift-id');
+        const supervisorEl = row.querySelector('.supervisor-text');
+        const dateEl = row.querySelector('.date-text');
+
+        const shiftIdText = shiftIdEl ? shiftIdEl.innerText.toLowerCase() : '';
+        const supervisorText = supervisorEl ? supervisorEl.innerText.toLowerCase() : '';
+        const dateText = dateEl ? dateEl.innerText.toLowerCase() : '';
+        const rowCycle = row.getAttribute('data-cycle');
+
+        const matchesSearch = !query || shiftIdText.includes(query) || supervisorText.includes(query) || dateText.includes(query);
+        const matchesCycle = !selectedCycle || rowCycle === selectedCycle;
+
+        if (matchesSearch && matchesCycle) {
+          row.style.display = '';
+          visibleCount++;
+        } else {
+          row.style.display = 'none';
+        }
+      });
+
+      const visibleCountEl = document.getElementById('visibleCount');
+      if (visibleCountEl) visibleCountEl.textContent = visibleCount;
+      const visibleSummaryEl = document.getElementById('visibleSummary');
+      if (visibleSummaryEl) visibleSummaryEl.textContent = visibleCount;
+
+      const emptyRow = document.getElementById('emptyStateRow');
+      if (emptyRow) {
+        emptyRow.style.display = (visibleCount === 0) ? '' : 'none';
+      }
+    }
+
+    if (searchInput) searchInput.addEventListener('input', filterRows);
+    if (shiftFilter) shiftFilter.addEventListener('change', filterRows);
+  });
+
+  function exportLogsData() {
+    let csv = [];
+    let rows = document.querySelectorAll("#shiftsTable tr");
+    
+    rows.forEach(row => {
+      if (row.style.display === 'none') return;
+      let cols = row.querySelectorAll("td, th");
+      let data = [];
+      for (let i = 0; i < cols.length - 1; i++) {
+        data.push('"' + cols[i].innerText.replace(/"/g, '""').trim() + '"');
+      }
+      if (data.length > 0) {
+        csv.push(data.join(","));
+      }
+    });
+
+    let csvFile = new Blob([csv.join("\n")], { type: "text/csv;charset=utf-8;" });
+    let downloadLink = document.createElement("a");
+    downloadLink.download = "shift_logs_export_" + new Date().toISOString().slice(0, 10) + ".csv";
+    downloadLink.href = window.URL.createObjectURL(csvFile);
+    downloadLink.style.display = "none";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+  }
+</script>
 </body>
 </html>

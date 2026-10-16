@@ -1,281 +1,348 @@
 <?php
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission($pdo, 'logistics.create');
 
 $active_page = 'maintenance_fuel';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Logistics & Fleet', 'Maintenance & Fuel', 'New Service Ticket'];
+$base_url  = '../../';
+$breadcrumb = ['I-GAS', 'Logistics & Fleet', 'Maintenance & Fuel', 'New Service Ticket'];
 
 $error_msg = '';
 
 try {
-    $stmt_seq = $pdo->query("SELECT COUNT(id) FROM maintenance_tickets");
-    $count = $stmt_seq->fetchColumn();
-    $new_ticket_id = 'MNT-' . str_pad($count + 4025, 4, '0', STR_PAD_LEFT);
+  $stmt_seq = $pdo->query("SELECT COUNT(id) FROM maintenance_tickets");
+  $count = $stmt_seq->fetchColumn();
+  $new_ticket_id = 'MNT-' . str_pad($count + 4025, 4, '0', STR_PAD_LEFT);
 
-    $stmt_vehicles = $pdo->query("SELECT fleet_id, make_model, plate_number FROM vehicles ORDER BY fleet_id ASC");
-    $vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
+  $stmt_vehicles = $pdo->query("SELECT fleet_id, make_model, plate_number FROM vehicles ORDER BY fleet_id ASC");
+  $vehicles = $stmt_vehicles->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $vehicles = [];
-    $new_ticket_id = 'MNT-' . rand(4025, 4999);
+  $vehicles = [];
+  $new_ticket_id = 'MNT-' . rand(4025, 4999);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $ticket_id = $_POST['ticket_id'] ?? $new_ticket_id;
-    $service_type = trim($_POST['service_type'] ?? '');
-    $vehicle_id = $_POST['vehicle_id'] ?? '';
-    $odometer = isset($_POST['odometer']) && $_POST['odometer'] !== '' ? (int)$_POST['odometer'] : null;
-    $scheduled_date = $_POST['scheduled_date'] ?? '';
-    $estimated_cost = !empty($_POST['estimated_cost']) ? (float)$_POST['estimated_cost'] : 0;
-    $workshop = trim($_POST['workshop'] ?? '');
-    $instructions = trim($_POST['instructions'] ?? '');
+  require_csrf();
+  $ticket_id = $_POST['ticket_id'] ?? $new_ticket_id;
+  $service_type = trim($_POST['service_type'] ?? '');
+  $vehicle_id = $_POST['vehicle_id'] ?? '';
+  $odometer = isset($_POST['odometer']) && $_POST['odometer'] !== '' ? (int)$_POST['odometer'] : null;
+  $scheduled_date = $_POST['scheduled_date'] ?? '';
+  $estimated_cost = !empty($_POST['estimated_cost']) ? (float)$_POST['estimated_cost'] : 0;
+  $workshop = trim($_POST['workshop'] ?? '');
+  $instructions = trim($_POST['instructions'] ?? '');
 
-    if (empty($service_type) || empty($vehicle_id) || $odometer === null || empty($scheduled_date) || empty($workshop)) {
-        $error_msg = "Please fill in all required fields.";
-    } else {
-        try {
-            $pdo->beginTransaction();
+  if (empty($service_type) || empty($vehicle_id) || $odometer === null || empty($scheduled_date) || empty($workshop)) {
+    $error_msg = "Please fill in all required fields (Service Type, Vehicle, Odometer, Date, Workshop).";
+  } else {
+    try {
+      $pdo->beginTransaction();
 
-            $stmt = $pdo->prepare("
-                INSERT INTO maintenance_tickets (ticket_id, service_type, vehicle_id, odometer, scheduled_date, estimated_cost, workshop, instructions)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([$ticket_id, $service_type, $vehicle_id, $odometer, $scheduled_date, $estimated_cost, $workshop, $instructions]);
+      $stmt = $pdo->prepare("
+        INSERT INTO maintenance_tickets (ticket_id, service_type, vehicle_id, odometer, scheduled_date, estimated_cost, workshop, instructions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ");
+      $stmt->execute([$ticket_id, $service_type, $vehicle_id, $odometer, $scheduled_date, $estimated_cost, $workshop, $instructions]);
 
-            $stmt_v = $pdo->prepare("UPDATE vehicles SET status = 'maintenance' WHERE fleet_id = ?");
-            $stmt_v->execute([$vehicle_id]);
+      $stmt_v = $pdo->prepare("UPDATE vehicles SET status = 'maintenance' WHERE fleet_id = ?");
+      $stmt_v->execute([$vehicle_id]);
 
-            $log_description = "Service ticket {$ticket_id} ({$service_type}) scheduled at {$workshop}.";
-            if (!empty($instructions)) {
-                $log_description .= " Notes: {$instructions}";
-            }
+      $log_description = "Service ticket {$ticket_id} ({$service_type}) scheduled at {$workshop}.";
+      if (!empty($instructions)) {
+        $log_description .= " Notes: {$instructions}";
+      }
 
-            $stmt_log = $pdo->prepare("
-                INSERT INTO vehicle_logs (fleet_id, event_type, event_date, event_time, odometer, fuel_liters, event_cost, logged_by, description)
-                VALUES (?, 'maintenance', ?, ?, ?, 0, ?, ?, ?)
-            ");
-            $stmt_log->execute([
-                $vehicle_id,
-                $scheduled_date,
-                date('H:i:s'),
-                $odometer,
-                $estimated_cost,
-                'System',
-                $log_description
-            ]);
+      $stmt_log = $pdo->prepare("
+        INSERT INTO vehicle_logs (fleet_id, event_type, event_date, event_time, odometer, fuel_liters, event_cost, logged_by, description)
+        VALUES (?, 'maintenance', ?, ?, ?, 0, ?, ?, ?)
+      ");
+      $stmt_log->execute([
+        $vehicle_id,
+        $scheduled_date,
+        date('H:i:s'),
+        $odometer,
+        $estimated_cost,
+        $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'System',
+        $log_description
+      ]);
 
-            $pdo->commit();
-            header("Location: maintenance_fuel.php");
-            exit;
-        } catch (PDOException $e) {
-            $pdo->rollBack();
-            $error_msg = "Error creating ticket. Ticket ID might already exist.";
-        }
+      $pdo->commit();
+      header("Location: maintenance_fuel.php");
+      exit;
+    } catch (PDOException $e) {
+      if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+      }
+      $error_msg = "Error creating ticket: " . $e->getMessage();
     }
+  }
 }
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Service Ticket | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
-        }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
-        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-
-        .card { background: var(--paper); border: 1px solid var(--line-soft); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-
-        .form-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mute); margin-bottom: 6px; }
-        .form-input, .form-select { width: 100%; border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); background: var(--paper); transition: border-color 0.15s ease; outline: none; }
-        .form-input:focus, .form-select:focus { border-color: var(--ink); }
-        .form-input::placeholder { color: var(--mute-soft); }
-        .form-input:disabled { background: var(--paper-deep); color: var(--mute); cursor: not-allowed; border-color: var(--line-soft); }
-
-        .input-group { position: relative; display: flex; align-items: center; }
-        .input-icon { position: absolute; left: 12px; color: var(--mute-soft); pointer-events: none; }
-        .has-icon { padding-left: 36px; }
-        .currency-symbol { position: absolute; left: 12px; font-size: 12px; font-weight: 600; color: var(--mute); pointer-events: none; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-en="New Service Ticket | I-GAS Control Room" data-ar="تذكرة صيانة جديدة | غرفة التحكم I-GAS">New Service Ticket | I-GAS Control Room</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="../../assets/css/theme.css">
+  <script>
+    (function() {
+      document.documentElement.classList.add('dark');
+      const savedLang = localStorage.getItem('app_lang') || 'en';
+      document.documentElement.lang = savedLang;
+      document.documentElement.dir = savedLang === 'ar' ? 'rtl' : 'ltr';
+    })();
+  </script>
+  <style>
+    .font-oxanium { font-family: 'Oxanium', 'Reem Kufi', sans-serif; }
+    .font-mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+  </style>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+<?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+<main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-    <?php include '../../includes/header.php'; ?>
+  <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
-            </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
+  <!-- Sub-Header / Telemetry Strip -->
+  <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 md:px-8 flex items-center justify-between text-xs font-mono shrink-0">
+    <div class="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
+      <span class="inline-flex items-center gap-1.5 text-slate-400">
+        <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+        <span data-en="WORK ORDER CREATION PROTOCOL" data-ar="بروتوكول فتح أمر عمل صيانة">WORK ORDER CREATION PROTOCOL</span>
+      </span>
+      <span class="text-neutral-300 dark:text-neutral-700">|</span>
+      <span class="text-slate-400">
+        <span data-en="ASSIGNED TICKET ID:" data-ar="معرف التذكرة:">ASSIGNED TICKET ID:</span> <strong class="text-white font-mono"><?= htmlspecialchars($new_ticket_id) ?></strong>
+      </span>
+      <span class="text-neutral-300 dark:text-neutral-700">|</span>
+      <span class="text-slate-400">
+        <span data-en="DATE:" data-ar="التاريخ:">DATE:</span> <strong class="text-white"><?= date('Y-m-d') ?></strong>
+      </span>
+    </div>
+    <div class="flex items-center gap-3 text-neutral-500 text-xs">
+      <span>SEC: MAINT-LEVEL-2</span>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  <div class="p-4 sm:p-6 md:p-8 w-full mx-auto space-y-6">
+
+    <!-- Breadcrumbs & Title -->
+    <div>
+      <div class="flex items-center gap-2 text-xs font-mono text-neutral-500 uppercase tracking-wider mb-2">
+        <a href="maintenance_fuel.php" class="hover:text-white transition-colors" data-en="Maintenance Registry" data-ar="سجل الصيانة">Maintenance Registry</a>
+        <span>/</span>
+        <span class="text-white font-semibold" data-en="New Ticket" data-ar="تذكرة جديدة">New Ticket</span>
+      </div>
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold font-oxanium tracking-tight text-white flex items-center gap-2">
+            <i data-lucide="wrench" class="w-6 h-6 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="Create Service Ticket" data-ar="إنشاء تذكرة صيانة للأسطول">Create Service Ticket</span>
+          </h1>
+          <p class="text-sm text-slate-400 mt-1" data-en="Schedule vehicle maintenance, log workshop repairs, and forecast service costs." data-ar="جدولة صيانة الشاحنات ومركبات الأسطول، وتحديد الورشة وتكاليف الإصلاح المتوقعة.">
+            Schedule vehicle maintenance, log workshop repairs, and forecast service costs.
+          </p>
+        </div>
+        <div>
+          <a href="maintenance_fuel.php" class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-slate-300 bg-[#112433] text-slate-200 border-[#234257] bg-[#112433] border border-[#1e3a50] hover:bg-[#102332] dark:hover:bg-neutral-700/50 rounded-xs transition-colors">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+            <span data-en="Back to Registry" data-ar="العودة لسجل الصيانة">Back to Registry</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <?php if ($error_msg): ?>
+      <div class="p-4 border border-rose-800 dark:border-rose-900 bg-rose-950/30 dark:bg-rose-950/30 text-rose-300 dark:text-rose-300 rounded-xs flex items-center gap-3 text-sm">
+        <i data-lucide="alert-circle" class="w-5 h-5 shrink-0 text-rose-600 dark:text-rose-400"></i>
+        <div>
+          <strong class="font-mono text-xs uppercase" data-en="Submission Error:" data-ar="خطأ في الإدخال:">Submission Error:</strong> <?= htmlspecialchars($error_msg) ?>
+        </div>
+      </div>
+    <?php endif; ?>
+
+    <!-- Form Card -->
+    <form action="" method="POST" class="bg-[#0c1924] border border-[#1a3346] rounded-xs overflow-hidden">
+      <?= csrf_field() ?>
+      <input type="hidden" name="ticket_id" value="<?= htmlspecialchars($new_ticket_id) ?>">
+
+      <!-- Section 1: Ticket Initialization -->
+      <div class="p-6 border-b border-[#1a3346]">
+        <div class="flex items-center gap-2 mb-4 pb-2 border-b border-neutral-100 border-[#1a3346]/60">
+          <span class="w-1.5 h-3 bg-teal-500 rounded-xs"></span>
+          <h2 class="text-xs font-mono uppercase tracking-wider font-semibold text-white flex items-center gap-2">
+            <i data-lucide="tag" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="Ticket Metadata & Classification" data-ar="بيانات التذكرة والتصنيف">Ticket Metadata & Classification</span>
+          </h2>
         </div>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Ticket Job ID" data-ar="معرف التذكرة المخصص">
+              Ticket Job ID
+            </label>
+            <input type="text" class="w-full h-10 px-3 text-xs font-mono bg-[#09151f] border border-[#1e3a50] rounded-xs text-neutral-500 cursor-not-allowed" value="<?= htmlspecialchars($new_ticket_id) ?>" readonly>
+          </div>
 
-            <div >
-                <div class="mb-7">
-                    <div class="flex items-center gap-2 mb-2">
-                        <a href="maintenance_fuel.php" class="text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors" style="color: var(--mute); text-decoration: none;">Maintenance Registry</a>
-                        <i data-lucide="chevron-right" class="w-3 h-3 text-[var(--mute-soft)]"></i>
-                        <span class="text-[11px] font-semibold uppercase tracking-[0.14em]" style="color: var(--ink);">New Ticket</span>
-                    </div>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Create Service Ticket</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Schedule vehicle maintenance, log workshop repairs, and forecast service costs.</p>
-                </div>
+          <div>
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Service Classification *" data-ar="نوع الخدمة والصيانة *">
+              Service Classification *
+            </label>
+            <select name="service_type" required class="w-full h-10 px-3 text-xs font-sans bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500/50 outline-none transition-colors">
+              <option value="" disabled selected data-en="-- Select service classification --" data-ar="-- اختر تصنيف الصيانة المطلوبة --">-- Select service classification --</option>
+              <option value="preventive" data-en="Preventive Maintenance (PM)" data-ar="صيانة دورية وقائية (PM)">Preventive Maintenance (PM)</option>
+              <option value="repair" data-en="Corrective Repair / Overhaul" data-ar="إصلاح عطل فني / عمرة">Corrective Repair / Overhaul</option>
+              <option value="inspection" data-en="Safety & Pressure Valve Inspection" data-ar="فحص السلامة وصمامات الضغط">Safety & Pressure Valve Inspection</option>
+              <option value="tires" data-en="Tire Replacement / Wheel Balancing" data-ar="استبدال إطارات وضبط ميزان">Tire Replacement / Wheel Balancing</option>
+              <option value="oil" data-en="Oil & Filter Fluid Change" data-ar="تغيير زيت وفلاتر وسوائل">Oil & Filter Fluid Change</option>
+              <option value="electrical" data-en="Cryo Electrical & Sensor Diagnostics" data-ar="فحص كهربائي وحساسات الخزان">Cryo Electrical & Sensor Diagnostics</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
-                <?php if ($error_msg): ?>
-                    <div class="mb-5 p-3 rounded-sm text-[13px] font-medium" style="background: #F8E9E7; color: #963B33; border: 1px solid #963B33;">
-                        <?= htmlspecialchars($error_msg) ?>
-                    </div>
-                <?php endif; ?>
+      <!-- Section 2: Asset Details -->
+      <div class="p-6 border-b border-[#1a3346]">
+        <div class="flex items-center gap-2 mb-4 pb-2 border-b border-neutral-100 border-[#1a3346]/60">
+          <span class="w-1.5 h-3 bg-teal-500 rounded-xs"></span>
+          <h2 class="text-xs font-mono uppercase tracking-wider font-semibold text-white flex items-center gap-2">
+            <i data-lucide="truck" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="Target Carrier Asset" data-ar="المركبة المستهدفة للصيانة">Target Carrier Asset</span>
+          </h2>
+        </div>
 
-                <form action="" method="POST" class="card rounded-md flex flex-col overflow-hidden">
-                    <input type="hidden" name="ticket_id" value="<?= htmlspecialchars($new_ticket_id) ?>">
-                    
-                    <div class="p-8">
-                        <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="wrench" class="w-4 h-4" style="color: var(--mute);"></i>Ticket Initialization
-                        </h3>
-                        
-                        <div class="grid grid-cols-2 gap-6 mb-8">
-                            <div>
-                                <label class="form-label">Ticket ID</label>
-                                <input type="text" class="form-input readonly mono num" value="<?= htmlspecialchars($new_ticket_id) ?>" disabled>
-                            </div>
-                            <div>
-                                <label class="form-label">Service Type</label>
-                                <input type="text" name="service_type" class="form-input" placeholder="e.g. Preventive Maintenance, Oil Change" required>
-                            </div>
-                        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Select Fleet Unit *" data-ar="اختر شاحنة الأسطول *">
+              Select Fleet Unit *
+            </label>
+            <select name="vehicle_id" required class="w-full h-10 px-3 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500/50 outline-none transition-colors">
+              <option value="" disabled selected data-en="-- Select Vehicle Fleet ID --" data-ar="-- اختر المركبة من الأسطول --">-- Select Vehicle Fleet ID --</option>
+              <?php foreach ($vehicles as $v): ?>
+                <option value="<?= htmlspecialchars($v['fleet_id']) ?>">
+                  <?= htmlspecialchars($v['fleet_id']) ?> (<?= htmlspecialchars($v['make_model']) ?> — <?= htmlspecialchars($v['plate_number']) ?>)
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
 
-                        <hr class="mb-8" style="border-color: var(--line-soft);">
-
-                        <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="truck" class="w-4 h-4" style="color: var(--mute);"></i>Asset Details
-                        </h3>
-
-                        <div class="grid grid-cols-2 gap-6 mb-8">
-                            <div>
-                                <label class="form-label">Select Fleet Vehicle</label>
-                                <select class="form-select mono" name="vehicle_id" required>
-                                    <option value="" disabled selected>Identify unit...</option>
-                                    <?php foreach ($vehicles as $v): ?>
-                                        <option value="<?= htmlspecialchars($v['fleet_id']) ?>">
-                                            <?= htmlspecialchars($v['fleet_id']) ?> (<?= htmlspecialchars($v['make_model']) ?> — <?= htmlspecialchars($v['plate_number']) ?>)
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label">Current Odometer (KM)</label>
-                                <div class="input-group">
-                                    <i data-lucide="gauge" class="w-4 h-4 input-icon"></i>
-                                    <input type="number" name="odometer" class="form-input has-icon num" placeholder="e.g. 145000" required>
-                                </div>
-                            </div>
-                        </div>
-
-                        <hr class="mb-8" style="border-color: var(--line-soft);">
-
-                        <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="calendar-clock" class="w-4 h-4" style="color: var(--mute);"></i>Scheduling &amp; Financials
-                        </h3>
-
-                        <div class="grid grid-cols-2 gap-6 mb-8">
-                            <div>
-                                <label class="form-label">Scheduled Date</label>
-                                <div class="input-group">
-                                    <i data-lucide="calendar" class="w-4 h-4 input-icon"></i>
-                                    <input type="date" name="scheduled_date" class="form-input has-icon mono num" value="<?= date('Y-m-d') ?>" required>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="form-label">Estimated Cost</label>
-                                <div class="input-group">
-                                    <span class="currency-symbol">SAR</span>
-                                    <input type="number" step="0.01" name="estimated_cost" class="form-input has-icon num" placeholder="0.00" required>
-                                </div>
-                            </div>
-                            <div class="col-span-2">
-                                <label class="form-label">Assigned Workshop / Mechanic</label>
-                                <input type="text" name="workshop" class="form-input" placeholder="e.g. In-house Garage or External Vendor Name" required>
-                            </div>
-                        </div>
-
-                        <hr class="mb-8" style="border-color: var(--line-soft);">
-
-                        <h3 class="text-[14px] font-semibold tracking-tight mb-6 flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="clipboard-list" class="w-4 h-4" style="color: var(--mute);"></i>Service Instructions
-                        </h3>
-
-                        <div class="grid grid-cols-1 gap-6">
-                            <div>
-                                <label class="form-label">Reported Issues &amp; Instructions</label>
-                                <textarea name="instructions" class="form-input" rows="4" placeholder="Detail the symptoms, required part replacements, or standard operating procedures for this service ticket..."></textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="px-8 py-4 border-t flex justify-end gap-3" style="background: var(--paper-dim); border-color: var(--line-soft);">
-                        <a href="maintenance_fuel.php" class="btn-secondary px-5 py-2.5 rounded-sm text-[13.5px] font-medium">Cancel Ticket</a>
-                        <button type="submit" class="btn-primary px-6 py-2.5 rounded-sm text-[13.5px] font-medium">Authorize &amp; Schedule</button>
-                    </div>
-                </form>
-
+          <div>
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Current Odometer (KM) *" data-ar="قراءة العداد الحالية (كم) *">
+              Current Odometer (KM) *
+            </label>
+            <div class="relative">
+              <input type="number" name="odometer" placeholder="e.g. 145000" required class="w-full h-10 ps-3 pe-12 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500/50 outline-none transition-colors">
+              <span class="absolute end-3 top-2.5 text-xs font-mono text-neutral-400 pointer-events-none">KM</span>
             </div>
+          </div>
         </div>
-    </main>
+      </div>
 
-    <script>
-        lucide.createIcons();
-    </script>
+      <!-- Section 3: Scheduling & Workshop Financials -->
+      <div class="p-6 border-b border-[#1a3346]">
+        <div class="flex items-center gap-2 mb-4 pb-2 border-b border-neutral-100 border-[#1a3346]/60">
+          <span class="w-1.5 h-3 bg-teal-500 rounded-xs"></span>
+          <h2 class="text-xs font-mono uppercase tracking-wider font-semibold text-white flex items-center gap-2">
+            <i data-lucide="calendar-clock" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="Scheduling & Cost Forecast" data-ar="الجدولة الزمنية وتوقع التكلفة">Scheduling & Cost Forecast</span>
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Scheduled Calendar Date *" data-ar="تاريخ الموعد المجدول *">
+              Scheduled Calendar Date *
+            </label>
+            <input type="date" name="scheduled_date" value="<?= date('Y-m-d') ?>" required class="w-full h-10 px-3 text-xs font-mono bg-[#0c1924] border border-[#1e3a50] rounded-xs text-white focus:border-neutral-900 dark:focus:border-neutral-100 outline-none transition-colors">
+          </div>
+
+          <div>
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Estimated Cost (SAR) *" data-ar="التكلفة التقديرية (ريال) *">
+              Estimated Cost (SAR) *
+            </label>
+            <div class="relative">
+              <input type="number" step="0.01" name="estimated_cost" placeholder="0.00" required class="w-full h-10 ps-3 pe-12 text-xs font-mono bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500/50 outline-none transition-colors">
+              <span class="absolute end-3 top-2.5 text-xs font-mono text-neutral-400 pointer-events-none">SAR</span>
+            </div>
+          </div>
+
+          <div class="md:col-span-2">
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Assigned Workshop / Bay Name *" data-ar="اسم الورشة أو المسار المعين *">
+              Assigned Workshop / Bay Name *
+            </label>
+            <input type="text" name="workshop" placeholder="e.g. Central Plant Garage Bay 2, MAN Truck Center Jeddah..." required class="w-full h-10 px-3 text-xs font-sans bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500/50 outline-none transition-colors">
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 4: Service Instructions -->
+      <div class="p-6 border-b border-[#1a3346]">
+        <div class="flex items-center gap-2 mb-4 pb-2 border-b border-neutral-100 border-[#1a3346]/60">
+          <span class="w-1.5 h-3 bg-teal-500 rounded-xs"></span>
+          <h2 class="text-xs font-mono uppercase tracking-wider font-semibold text-white flex items-center gap-2">
+            <i data-lucide="clipboard-list" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="Reported Issues & Work Instructions" data-ar="المشاكل المبلغ عنها وتعليمات الفحص">Reported Issues & Work Instructions</span>
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6">
+          <div>
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5" data-en="Diagnostic Instructions & Part Details" data-ar="تعليمات التشخيص وتفاصيل القطع">
+              Diagnostic Instructions & Part Details
+            </label>
+            <textarea name="instructions" rows="4" placeholder="Detail the symptoms, required part replacements, or standard operating procedures for this service ticket..." class="w-full p-3 text-xs font-sans bg-[#08131c] border border-[#1e3a50] rounded-xs text-slate-100 placeholder-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500/50 outline-none transition-colors"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Form Actions Bar -->
+      <div class="p-4 bg-[#09151f] flex items-center justify-between">
+        <a href="maintenance_fuel.php" class="px-4 py-2 text-xs font-mono uppercase tracking-wider text-slate-300 hover:text-white transition-colors" data-en="Discard" data-ar="إلغاء">
+          Discard
+        </a>
+        <button type="submit" class="btn-cta-orange inline-flex items-center gap-2 px-6 py-2 text-xs font-medium font-mono uppercase tracking-wider text-white bg-[#FF6B1A] hover:bg-[#e05a10] rounded-xs cursor-pointer transition-colors">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span data-en="Authorize & Schedule Ticket" data-ar="اعتماد وجدولة تذكرة الصيانة">Authorize & Schedule Ticket</span>
+        </button>
+      </div>
+    </form>
+
+  </div>
+</main>
+
+<script>
+  lucide.createIcons();
+
+  function applyLanguage(lang) {
+    document.querySelectorAll('[data-en]').forEach(el => {
+      const transText = el.getAttribute('data-' + lang) || el.getAttribute('data-en');
+      if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.hasAttribute('placeholder')) {
+        el.placeholder = transText;
+      } else if (el.tagName === 'OPTION') {
+        el.innerText = transText;
+      } else {
+        el.innerText = transText;
+      }
+    });
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  }
+
+  document.addEventListener("DOMContentLoaded", function() {
+    const savedLang = localStorage.getItem('app_lang') || 'en';
+    applyLanguage(savedLang);
+  });
+</script>
 </body>
 </html>

@@ -1,378 +1,449 @@
 <?php
-session_start();
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission('clients.view');
 
 $active_page = 'client_contracts';
-$breadcrumb  = ['I-GAS', 'CRM & Sales', 'Client Contracts', 'Contract Details'];
+$breadcrumb = ['I-GAS', 'CRM & Sales', 'Client Contracts', 'Contract Details'];
 
 $contract_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if ($contract_id <= 0) {
-    header('Location: client_contracts.php');
-    exit;
+  $firstId = (int)$pdo->query("SELECT id FROM client_contracts ORDER BY id ASC LIMIT 1")->fetchColumn();
+  if ($firstId > 0) {
+    $contract_id = $firstId;
+  } else {
+    redirect('modules/crm_sales/client_contracts.php');
+  }
 }
 
 $stmt = $pdo->prepare("
-    SELECT 
-        c.*,
-        p.company_name,
-        p.entity_type,
-        p.contact_first_name,
-        p.contact_last_name,
-        p.job_title,
-        p.email,
-        p.phone,
-        p.country,
-        p.city,
-        p.address AS partner_address,
-        p.cr_number,
-        p.tax_id,
-        p.segment,
-        p.rating
-    FROM client_contracts c
-    JOIN partners p ON c.client_id = p.id
-    WHERE c.id = :id
-    LIMIT 1
+  SELECT 
+    c.*,
+    p.company_name,
+    p.entity_type,
+    p.contact_first_name,
+    p.contact_last_name,
+    p.job_title,
+    p.email,
+    p.phone,
+    p.country,
+    p.city,
+    p.address AS partner_address,
+    p.cr_number,
+    p.tax_id,
+    p.segment,
+    p.rating,
+    p.sales_rep_id,
+    p.assigned_to
+  FROM client_contracts c
+  JOIN partners p ON c.client_id = p.id
+  WHERE c.id = :id
+  LIMIT 1
 ");
 $stmt->execute(['id' => $contract_id]);
 $contract = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$contract) {
-    header('Location: client_contracts.php');
-    exit;
+  redirect('modules/crm_sales/client_contracts.php');
+}
+
+if (!check_record_ownership($pdo, 'partners', $contract['client_id'], 'assigned_to') && !check_record_ownership($pdo, 'partners', $contract['client_id'], 'sales_rep_id')) {
+  redirect('modules/crm_sales/client_contracts.php?error=unauthorized');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
-    $del = $pdo->prepare("DELETE FROM client_contracts WHERE id = :id");
-    $del->execute(['id' => $contract_id]);
-    header('Location: client_contracts.php');
-    exit;
+  require_csrf();
+  require_permission('clients.delete');
+  $del = $pdo->prepare("DELETE FROM client_contracts WHERE id = :id");
+  $del->execute(['id' => $contract_id]);
+  redirect('modules/crm_sales/client_contracts.php?deleted=1');
 }
 
 $today = new DateTime();
-$start = new DateTime($contract['start_date']);
-$end   = new DateTime($contract['end_date']);
+$start = new DateTime($contract['start_date'] ?? 'now');
+$end  = new DateTime($contract['end_date'] ?? '+1 year');
 $expiringThreshold = (clone $today)->modify('+60 days');
 
-$status = $contract['status'];
+$status = $contract['status'] ?? 'active';
 if ($end >= $today && $end <= $expiringThreshold && $status !== 'terminated' && $status !== 'expired') {
-    $status = 'expiring';
+  $status = 'expiring';
 }
 
-$statusStyles = [
-    'active'     => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Active'],
-    'expiring'   => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Expiring Soon'],
-    'expired'    => ['bg' => '#F2F1EF', 'fg' => '#767470', 'dot' => '#A6A39D', 'label' => 'Expired'],
-    'terminated' => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Terminated'],
+$statusConfigs = [
+  'active'   => ['border' => 'border-teal-500/30', 'bg' => 'bg-teal-500/10', 'text' => 'text-teal-400 dark:text-teal-400', 'dot' => 'bg-teal-500', 'label' => 'Active', 'label_ar' => 'نشط'],
+  'expiring'  => ['border' => 'border-amber-500/30', 'bg' => 'bg-amber-500/10', 'text' => 'text-amber-400 dark:text-amber-400', 'dot' => 'bg-amber-500', 'label' => 'Expiring Soon', 'label_ar' => 'ينتهي قريباً'],
+  'expired'  => ['border' => 'border-neutral-500/30', 'bg' => 'bg-neutral-500/10', 'text' => 'text-slate-400', 'dot' => 'bg-neutral-500', 'label' => 'Expired', 'label_ar' => 'منتهي'],
+  'terminated' => ['border' => 'border-rose-500/30', 'bg' => 'bg-rose-500/10', 'text' => 'text-rose-400 dark:text-rose-400', 'dot' => 'bg-rose-500', 'label' => 'Terminated', 'label_ar' => 'ملغي'],
 ];
-$s = $statusStyles[$status];
+$sc = $statusConfigs[$status] ?? $statusConfigs['active'];
 
 $totalDays = max(1, $start->diff($end)->days);
 $elapsedDays = $today >= $start ? $today->diff($start)->days : 0;
 if ($today > $end) { $elapsedDays = $totalDays; }
 $progressPct = min(100, max(0, round(($elapsedDays / $totalDays) * 100)));
-
 $daysRemaining = $today <= $end ? $today->diff($end)->days : 0;
 
-$words = preg_split('/\s+/', trim($contract['company_name']));
+$words = preg_split('/\s+/', trim((string)($contract['company_name'] ?? '')));
 $initials = '';
 if (count($words) >= 2) {
-    $initials = strtoupper(mb_substr($words[0], 0, 1) . mb_substr($words[1], 0, 1));
+  $initials = strtoupper(mb_substr($words[0], 0, 1) . mb_substr($words[1], 0, 1));
 } elseif (count($words) === 1 && mb_strlen($words[0]) > 0) {
-    $initials = strtoupper(mb_substr($words[0], 0, 2));
+  $initials = strtoupper(mb_substr($words[0], 0, 2));
 }
 $initials = $initials ?: 'CL';
 
-$isCorp = ($contract['entity_type'] === 'Corporate');
-$avatarBg = $isCorp ? '#1A1A1A' : '#EFEEEC';
-$avatarFg = $isCorp ? '#FFFFFF' : '#5C5A56';
-$avatarBorder = $isCorp ? '' : 'border:1px solid #DEDCD7;';
-
 $paymentTermsLabel = [
-    'cod'   => 'Cash on Delivery',
-    'net15' => 'Net 15',
-    'net30' => 'Net 30',
-    'net45' => 'Net 45',
-    'net60' => 'Net 60',
+  'cod'  => 'Cash on Delivery',
+  'net15' => 'Net 15 Days',
+  'net30' => 'Net 30 Days',
+  'net45' => 'Net 45 Days',
+  'net60' => 'Net 60 Days',
 ];
 $payTerm = $contract['payment_terms'] ?? '';
-$payTermDisplay = $paymentTermsLabel[$payTerm] ?? ($payTerm ?: '—');
+$payTermDisplay = $paymentTermsLabel[$payTerm] ?? ($payTerm ?: 'Net 30 Days');
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars($_SESSION['lang'] ?? 'en') ?>" dir="<?= ($_SESSION['lang'] ?? 'en') === 'ar' ? 'rtl' : 'ltr' ?>" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contract <?= htmlspecialchars($contract['contract_number']) ?> | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
-        }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
-        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-        .nav-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
-        .card { background: var(--paper); border: 1px solid var(--line-soft); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-        .btn-danger { background: var(--paper); color: #963B33; border: 1px solid #E3C9C6; transition: background-color 0.15s ease, border-color 0.15s ease; }
-        .btn-danger:hover { background: #FBF1F0; border-color: #963B33; }
-        .meter-bar { background: var(--paper-deep); border: 1px solid var(--line-soft); border-radius: 2px; }
-        .meter-fill { background: var(--ink); }
-        .avatar-sq {
-            width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
-            font-size: 15px; font-weight: 600; flex-shrink: 0; border-radius: 6px;
-        }
-        .pill {
-            display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500;
-            padding: 3px 9px; border-radius: 3px; line-height: 1;
-        }
-        .info-row { display: flex; justify-content: space-between; align-items: baseline; padding: 11px 0; border-bottom: 1px solid var(--line-soft); }
-        .info-row:last-child { border-bottom: none; }
-        .info-label { font-size: 12px; color: var(--mute); font-weight: 500; }
-        .info-value { font-size: 13.5px; color: var(--ink); font-weight: 500; text-align: right; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contract <?= htmlspecialchars($contract['contract_number']) ?> | I-GAS Enterprise</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="<?= app_url('assets/css/theme.css') ?>">
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+  <?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-<main class="flex-1 flex flex-col min-w-0">
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-<?php include '../../includes/header.php'; ?>
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-<div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-    <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-        <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
-    </span>
-    <span class="w-px h-3" style="background: var(--line);"></span>
-    <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-    <span class="w-px h-3" style="background: var(--line);"></span>
-    <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
-    <span class="ml-auto text-[11px] mono uppercase tracking-wide" style="color: var(--mute-soft);">v2.4.1</span>
-</div>
-
-<div class="flex-1 overflow-auto px-8 py-7">
-
-    <a href="client_contracts.php" class="inline-flex items-center gap-1.5 text-[12.5px] font-medium mb-5" style="color: var(--mute); text-decoration: none;" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">
-        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>Back to Contract Registry
-    </a>
-
-    <div class="flex justify-between items-start mb-7">
-        <div class="flex items-center gap-4">
-            <span class="avatar-sq" style="background:<?= $avatarBg ?>; color:<?= $avatarFg ?>; <?= $avatarBorder ?>"><?= htmlspecialchars($initials) ?></span>
-            <div>
-                <div class="flex items-center gap-3 mb-1.5">
-                    <h2 class="text-[24px] font-semibold tracking-tight leading-none num" style="color: var(--ink);"><?= htmlspecialchars($contract['contract_number']) ?></h2>
-                    <span class="pill" style="background: <?= $s['bg'] ?>; color: <?= $s['fg'] ?>;">
-                        <span class="status-dot" style="background:<?= $s['dot'] ?>;"></span><?= $s['label'] ?>
-                    </span>
-                </div>
-                <p class="text-[13.5px]" style="color: var(--mute);"><?= htmlspecialchars($contract['company_name']) ?> · <?= htmlspecialchars($contract['entity_type']) ?></p>
-            </div>
+    <!-- Telemetry Bar -->
+      <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 sm:px-6 flex items-center justify-between text-xs font-mono text-slate-400">
+        <div class="flex items-center gap-4 overflow-x-auto no-scrollbar">
+          <span class="flex items-center gap-1.5 font-medium text-teal-400 dark:text-teal-400">
+            <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+            <span data-en="SYS: NOMINAL" data-ar="النظام: مستقر">SYS: NOMINAL</span>
+          </span>
+          <span class="text-neutral-300 dark:text-neutral-700">|</span>
+          <span data-en="MODULE: SUPPLY AGREEMENTS" data-ar="الوحدة: عقود التوريد">MODULE: SUPPLY AGREEMENTS</span>
+          <span class="text-neutral-300 dark:text-neutral-700">|</span>
+          <span class="font-mono text-neutral-500">REF: <?= htmlspecialchars($contract['contract_number']) ?></span>
         </div>
-        <div class="flex gap-3">
-            <?php if ($status === 'expiring'): ?>
-            <a href="renew_contract.php?id=<?= urlencode($contract['contract_number']) ?>" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                <i data-lucide="refresh-cw" class="w-4 h-4"></i>Renew Contract
-            </a>
-            <?php else: ?>
-            <a href="edit_contract.php?id=<?= urlencode($contract['id']) ?>" class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                <i data-lucide="pencil" class="w-4 h-4"></i>Edit Contract
+        <div class="hidden sm:flex items-center gap-3">
+          <span class="text-[11px] text-neutral-400">PLANT — JEDDAH HUB</span>
+        </div>
+      </div>
+
+      <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
+        <!-- Breadcrumbs & Navigation Back -->
+        <div class="flex items-center justify-between">
+          <a href="<?= app_url('modules/crm_sales/client_contracts.php') ?>" class="inline-flex items-center gap-2 text-xs font-mono text-neutral-500 hover:text-teal-400 dark:hover:text-teal-400 transition-colors">
+            <i data-lucide="arrow-left" class="w-3.5 h-3.5 rtl:rotate-180"></i>
+            <span data-en="Back to Master Contracts Registry" data-ar="العودة لسجل العقود الرئيسية">Back to Master Contracts Registry</span>
+          </a>
+          <span class="text-xs font-mono text-neutral-400">ID #<?= (int)$contract['id'] ?></span>
+        </div>
+
+        <!-- Page Header with Status & Primary CTA -->
+        <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 border-s-4 border-s-[#f97316]">
+          <div class="flex items-start gap-4">
+            <div class="w-14 h-14 rounded-md border border-[#1e3a50] bg-[#09151f] flex items-center justify-center font-mono font-bold text-lg text-slate-200 shrink-0">
+              <?= htmlspecialchars($initials) ?>
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex flex-wrap items-center gap-3">
+                <h1 class="font-mono text-2xl font-bold tracking-tight text-white">
+                  <?= htmlspecialchars($contract['contract_number']) ?>
+                </h1>
+                <span class="px-2.5 py-0.5 text-xs font-mono font-medium rounded-full border <?= $sc['border'] ?> <?= $sc['bg'] ?> <?= $sc['text'] ?> inline-flex items-center gap-1.5">
+                  <span class="w-1.5 h-1.5 rounded-full <?= $sc['dot'] ?>"></span>
+                  <span data-en="<?= $sc['label'] ?>" data-ar="<?= $sc['label_ar'] ?>"><?= $sc['label'] ?></span>
+                </span>
+                <?php if (!empty($contract['gas_type'])): ?>
+                  <?= gas_chip($contract['gas_type']) ?>
+                <?php endif; ?>
+              </div>
+              <p class="text-sm text-slate-400 flex items-center gap-2">
+                <a href="<?= app_url('modules/crm_sales/client_profile.php?id=' . urlencode((string)$contract['client_id'])) ?>" class="font-medium text-white hover:text-teal-600 dark:hover:text-teal-400 hover:underline">
+                  <?= htmlspecialchars($contract['company_name']) ?>
+                </a>
+                <span class="text-neutral-300 dark:text-neutral-700">•</span>
+                <span><?= htmlspecialchars($contract['entity_type'] ?? 'Corporate') ?></span>
+                <span class="text-neutral-300 dark:text-neutral-700">•</span>
+                <span class="font-mono text-xs text-neutral-500"><?= htmlspecialchars($contract['city'] ?? '') ?>, <?= htmlspecialchars($contract['country'] ?? 'KSA') ?></span>
+              </p>
+            </div>
+          </div>
+
+          <!-- Action Controls -->
+          <div class="flex flex-wrap items-center gap-3">
+            <?php if (has_permission($pdo, 'clients.edit')): ?>
+            <a href="<?= app_url('modules/crm_sales/renew_contract.php?id=' . urlencode((string)$contract['id'])) ?>" class="px-3.5 py-2 text-xs font-medium border border-[#1e3a50] hover:border-neutral-900 dark:hover:border-white rounded-md text-slate-200 transition-colors inline-flex items-center gap-2">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span data-en="<?= $status === 'expiring' ? 'Renew Contract' : 'Amend / Renew' ?>" data-ar="<?= $status === 'expiring' ? 'تجديد العقد' : 'تعديل / تجديد' ?>">
+                <?= $status === 'expiring' ? 'Renew Contract' : 'Amend / Renew' ?>
+              </span>
             </a>
             <?php endif; ?>
-            <form method="POST" action="" onsubmit="return confirm('Are you sure you want to delete this contract? This action cannot be undone.');">
-                <input type="hidden" name="action" value="delete">
-                <button type="submit" class="btn-danger px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>Delete
-                </button>
+
+            <!-- Single Primary CTA: Safety Valve Orange -->
+            <a href="<?= app_url('modules/crm_sales/new_calloff.php?client_id=' . urlencode((string)$contract['client_id']) . '&contract_id=' . urlencode((string)$contract['id'])) ?>" class="btn-cta-orange px-4 py-2 text-xs font-semibold rounded-md inline-flex items-center gap-2 transition-all">
+              <i data-lucide="truck" class="w-4 h-4"></i>
+              <span data-en="Issue Call-off Release" data-ar="إصدار استدعاء توريد">Issue Call-off Release</span>
+            </a>
+
+            <?php if (has_permission($pdo, 'clients.delete')): ?>
+            <form method="POST" action="" class="m-0 p-0 inline-block" onsubmit="return confirm('Are you sure you want to delete this contract? This action cannot be undone.');">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="p-2 border border-rose-800 dark:border-rose-900 hover:border-rose-600 rounded-md text-rose-600 hover:bg-rose-950/30 dark:hover:bg-rose-950/40 transition-colors" title="Delete Contract">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
             </form>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div class="card rounded-md p-5">
-            <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Contract Value</p>
-            <h3 class="text-[22px] font-semibold tracking-tight num" style="color: var(--ink);"><?= number_format($contract['contract_value']) ?><span class="text-[13px] font-normal ml-1" style="color: var(--mute);">SAR</span></h3>
-        </div>
-        <div class="card rounded-md p-5">
-            <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Monthly Quota</p>
-            <h3 class="text-[22px] font-semibold tracking-tight num" style="color: var(--ink);"><?= htmlspecialchars($contract['monthly_quota']) ?></h3>
-            <p class="text-[12px] mt-1" style="color: var(--mute);"><?= htmlspecialchars($contract['gas_type']) ?></p>
-        </div>
-        <div class="card rounded-md p-5">
-            <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Days Remaining</p>
-            <h3 class="text-[22px] font-semibold tracking-tight num" style="color: <?= $status === 'expiring' ? '#7A5E1E' : 'var(--ink)' ?>;"><?= number_format($daysRemaining) ?></h3>
-            <p class="text-[12px] mt-1" style="color: var(--mute);">of <?= number_format($totalDays) ?> day term</p>
-        </div>
-        <div class="card rounded-md p-5">
-            <p class="text-[11px] font-medium uppercase tracking-[0.1em] mb-3" style="color: var(--mute);">Term Progress</p>
-            <h3 class="text-[22px] font-semibold tracking-tight num" style="color: var(--ink);"><?= $progressPct ?><span class="text-[13px] font-normal ml-1" style="color: var(--mute);">%</span></h3>
-            <div class="mt-3 meter-bar h-1.5 w-full overflow-hidden">
-                <div class="meter-fill h-full" style="width: <?= $progressPct ?>%; background: var(--ink);"></div>
-            </div>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        <div class="lg:col-span-2 flex flex-col gap-5">
-
-            <div class="card rounded-md p-6">
-                <h3 class="text-[15px] font-semibold tracking-tight mb-1" style="color: var(--ink);">Contract Terms</h3>
-                <p class="text-[12.5px] mb-4" style="color: var(--mute);">Supply agreement details and billing configuration.</p>
-                <div>
-                    <div class="info-row">
-                        <span class="info-label">Contract Reference</span>
-                        <span class="info-value num"><?= htmlspecialchars($contract['contract_number']) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Gas Type</span>
-                        <span class="info-value"><?= htmlspecialchars($contract['gas_type']) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Monthly Quota</span>
-                        <span class="info-value"><?= htmlspecialchars($contract['monthly_quota']) ?> <?= htmlspecialchars($contract['unit'] ?? '') ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Start Date</span>
-                        <span class="info-value mono"><?= htmlspecialchars(date('d M Y', strtotime($contract['start_date']))) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">End Date</span>
-                        <span class="info-value mono"><?= htmlspecialchars(date('d M Y', strtotime($contract['end_date']))) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Payment Terms</span>
-                        <span class="info-value"><?= htmlspecialchars($payTermDisplay) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Billing Address</span>
-                        <span class="info-value" style="max-width: 60%;"><?= htmlspecialchars($contract['billing_address'] ?? '—') ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Contract Value</span>
-                        <span class="info-value num"><?= number_format($contract['contract_value']) ?> SAR</span>
-                    </div>
-                </div>
-            </div>
-
-            <?php if (!empty($contract['notes'])): ?>
-            <div class="card rounded-md p-6">
-                <h3 class="text-[15px] font-semibold tracking-tight mb-3" style="color: var(--ink);">Notes</h3>
-                <p class="text-[13.5px] leading-relaxed" style="color: var(--ink-soft);"><?= nl2br(htmlspecialchars($contract['notes'])) ?></p>
-            </div>
             <?php endif; ?>
-
+          </div>
         </div>
 
-        <div class="flex flex-col gap-5">
-
-            <div class="card rounded-md p-6">
-                <h3 class="text-[15px] font-semibold tracking-tight mb-4" style="color: var(--ink);">Client Account</h3>
-                <div class="flex items-center gap-3 mb-4">
-                    <span class="avatar-sq" style="width:38px;height:38px;font-size:13px; background:<?= $avatarBg ?>; color:<?= $avatarFg ?>; <?= $avatarBorder ?>"><?= htmlspecialchars($initials) ?></span>
-                    <div>
-                        <p class="text-[13.5px] font-semibold" style="color: var(--ink);"><?= htmlspecialchars($contract['company_name']) ?></p>
-                        <p class="text-[12px]" style="color: var(--mute);"><?= htmlspecialchars($contract['entity_type']) ?> · <?= htmlspecialchars($contract['segment'] ?? 'General') ?></p>
-                    </div>
-                </div>
-                <div>
-                    <div class="info-row">
-                        <span class="info-label">Contact</span>
-                        <span class="info-value"><?= htmlspecialchars($contract['contact_first_name'] . ' ' . $contract['contact_last_name']) ?></span>
-                    </div>
-                    <?php if (!empty($contract['job_title'])): ?>
-                    <div class="info-row">
-                        <span class="info-label">Job Title</span>
-                        <span class="info-value"><?= htmlspecialchars($contract['job_title']) ?></span>
-                    </div>
-                    <?php endif; ?>
-                    <div class="info-row">
-                        <span class="info-label">Email</span>
-                        <span class="info-value" style="font-size:12.5px;"><?= htmlspecialchars($contract['email']) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Phone</span>
-                        <span class="info-value mono"><?= htmlspecialchars($contract['phone']) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Location</span>
-                        <span class="info-value"><?= htmlspecialchars($contract['city'] . ', ' . $contract['country']) ?></span>
-                    </div>
-                    <?php if (!empty($contract['cr_number'])): ?>
-                    <div class="info-row">
-                        <span class="info-label">CR Number</span>
-                        <span class="info-value mono"><?= htmlspecialchars($contract['cr_number']) ?></span>
-                    </div>
-                    <?php endif; ?>
-                    <?php if (!empty($contract['tax_id'])): ?>
-                    <div class="info-row">
-                        <span class="info-label">Tax ID</span>
-                        <span class="info-value mono"><?= htmlspecialchars($contract['tax_id']) ?></span>
-                    </div>
-                    <?php endif; ?>
-                </div>
+        <!-- 4 Bento KPI Cards with 3px module accent rules -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- Value Card -->
+          <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-5 border-s-4 border-s-[#f97316]">
+            <div class="flex items-center justify-between text-neutral-500 mb-2">
+              <span class="text-xs font-mono uppercase tracking-wider" data-en="Contract Value" data-ar="قيمة العقد">Contract Value</span>
+              <i data-lucide="coins" class="w-4 h-4 text-teal-600"></i>
             </div>
-
-            <div class="card rounded-md p-6">
-                <h3 class="text-[15px] font-semibold tracking-tight mb-4" style="color: var(--ink);">Record Info</h3>
-                <div>
-                    <div class="info-row">
-                        <span class="info-label">Created</span>
-                        <span class="info-value mono" style="font-size:12px;"><?= !empty($contract['created_at']) ? htmlspecialchars(date('d M Y, H:i', strtotime($contract['created_at']))) : '—' ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Last Updated</span>
-                        <span class="info-value mono" style="font-size:12px;"><?= !empty($contract['updated_at']) ? htmlspecialchars(date('d M Y, H:i', strtotime($contract['updated_at']))) : '—' ?></span>
-                    </div>
-                </div>
+            <div class="text-2xl font-mono font-bold text-white">
+              <?= number_format((float)($contract['contract_value'] ?? 0)) ?>
+              <span class="text-xs font-sans font-normal text-neutral-500">SAR</span>
             </div>
+            <p class="text-xs text-neutral-500 mt-1" data-en="Total agreed committed ceiling" data-ar="إجمالي السقف المتفق عليه">Total committed ceiling</p>
+          </div>
 
+          <!-- Quota Card -->
+          <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-5 border-s-4 border-s-[#f97316]">
+            <div class="flex items-center justify-between text-neutral-500 mb-2">
+              <span class="text-xs font-mono uppercase tracking-wider" data-en="Monthly Quota" data-ar="الحصة الشهرية">Monthly Quota</span>
+              <i data-lucide="gauge" class="w-4 h-4 text-blue-600"></i>
+            </div>
+            <div class="text-2xl font-mono font-bold text-white">
+              <?= number_format((float)($contract['monthly_quota'] ?? 0)) ?>
+              <span class="text-xs font-sans font-normal text-neutral-500"><?= htmlspecialchars($contract['unit'] ?? 'm³') ?></span>
+            </div>
+            <p class="text-xs text-neutral-500 mt-1 flex items-center gap-1.5">
+              <span data-en="Gas Product:" data-ar="منتج الغاز:">Gas Product:</span>
+              <span class="font-medium text-slate-300"><?= htmlspecialchars($contract['gas_type'] ?? 'N/A') ?></span>
+            </p>
+          </div>
+
+          <!-- Days Remaining Card -->
+          <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-5 border-s-[3px] <?= $status === 'expiring' ? 'border-s-amber-600' : 'border-s-cyan-600' ?>">
+            <div class="flex items-center justify-between text-neutral-500 mb-2">
+              <span class="text-xs font-mono uppercase tracking-wider" data-en="Days Remaining" data-ar="الأيام المتبقية">Days Remaining</span>
+              <i data-lucide="clock" class="w-4 h-4 <?= $status === 'expiring' ? 'text-amber-600' : 'text-cyan-600' ?>"></i>
+            </div>
+            <div class="text-2xl font-mono font-bold <?= $status === 'expiring' ? 'text-amber-400 dark:text-amber-400' : 'text-white' ?>">
+              <?= number_format($daysRemaining) ?>
+              <span class="text-xs font-sans font-normal text-neutral-500" data-en="Days" data-ar="يوم">Days</span>
+            </div>
+            <p class="text-xs text-neutral-500 mt-1">
+              <span data-en="of total" data-ar="من إجمالي">of total</span> <?= number_format($totalDays) ?> <span data-en="days term" data-ar="يوم مدة العقد">days term</span>
+            </p>
+          </div>
+
+          <!-- Progress Card -->
+          <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-5 border-s-4 border-s-[#f97316]">
+            <div class="flex items-center justify-between text-neutral-500 mb-2">
+              <span class="text-xs font-mono uppercase tracking-wider" data-en="Term Progress" data-ar="تقدم مدة العقد">Term Progress</span>
+              <i data-lucide="activity" class="w-4 h-4 text-slate-600"></i>
+            </div>
+            <div class="text-2xl font-mono font-bold text-white">
+              <?= $progressPct ?><span class="text-xs font-sans font-normal text-neutral-500">%</span>
+            </div>
+            <div class="w-full bg-[#09151f] h-2 rounded-none mt-2 overflow-hidden border border-[#1e3a50]">
+              <div class="bg-teal-600 h-full" style="width: <?= $progressPct ?>%;"></div>
+            </div>
+          </div>
         </div>
 
-    </div>
+        <!-- Two-Column Technical Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Left: Specifications & Terms (2 cols) -->
+          <div class="lg:col-span-2 space-y-6">
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md">
+              <div class="px-6 py-4 border-b border-[#1a3346] flex items-center justify-between">
+                <div>
+                  <h2 class="text-sm font-semibold text-white" data-en="Master Supply Terms & SLA" data-ar="بنود التوريد ومستوى الخدمة">
+                    Master Supply Terms & SLA
+                  </h2>
+                  <p class="text-xs text-neutral-500" data-en="Contractual parameters, delivery schedules, and invoicing." data-ar="المعايير التعاقدية وجداول التسليم والفوترة.">
+                    Contractual parameters, delivery schedules, and invoicing.
+                  </p>
+                </div>
+                <span class="px-2 py-0.5 text-[11px] font-mono rounded bg-[#09151f] text-slate-400 border border-[#1e3a50]">
+                  EN-10204 / ISO 14175
+                </span>
+              </div>
 
-</div>
-</main>
+              <div class="p-6 divide-y divide-[#152a3a] dark:divide-neutral-800 text-sm">
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Contract Reference" data-ar="الرقم التعاقدي المرجعي">Contract Reference</span>
+                  <span class="font-mono font-medium text-white"><?= htmlspecialchars($contract['contract_number']) ?></span>
+                </div>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Designated Gas Type" data-ar="نوع الغاز المخصص">Designated Gas Type</span>
+                  <span class="font-medium text-white flex items-center gap-2">
+                    <?= htmlspecialchars($contract['gas_type'] ?? 'Bulk Gas') ?>
+                    <?php if (!empty($contract['gas_type'])): ?>
+                      <?= gas_chip($contract['gas_type']) ?>
+                    <?php endif; ?>
+                  </span>
+                </div>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Monthly Guaranteed Quota" data-ar="الحصة الشهرية المضمونة">Monthly Guaranteed Quota</span>
+                  <span class="font-mono font-semibold text-white">
+                    <?= number_format((float)($contract['monthly_quota'] ?? 0)) ?> <?= htmlspecialchars($contract['unit'] ?? 'm³') ?>
+                  </span>
+                </div>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Commencement Date" data-ar="تاريخ بدء السريان">Commencement Date</span>
+                  <span class="font-mono text-slate-200">
+                    <?= !empty($contract['start_date']) ? htmlspecialchars(date('d M Y', strtotime($contract['start_date']))) : '—' ?>
+                  </span>
+                </div>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Expiration Date" data-ar="تاريخ انتهاء السريان">Expiration Date</span>
+                  <span class="font-mono font-medium <?= $status === 'expiring' ? 'text-amber-600' : 'text-slate-200' ?>">
+                    <?= !empty($contract['end_date']) ? htmlspecialchars(date('d M Y', strtotime($contract['end_date']))) : '—' ?>
+                  </span>
+                </div>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Payment Settlement Terms" data-ar="شروط سداد الفواتير">Payment Settlement Terms</span>
+                  <span class="font-medium text-white"><?= htmlspecialchars($payTermDisplay) ?></span>
+                </div>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Formal Invoicing Address" data-ar="عنوان الفوترة المعتمد">Formal Invoicing Address</span>
+                  <span class="text-slate-300 max-w-sm text-end">
+                    <?= htmlspecialchars($contract['billing_address'] ?? ($contract['partner_address'] ?? '—')) ?>
+                  </span>
+                </div>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span class="text-xs font-mono text-neutral-500" data-en="Committed Contract Ceiling" data-ar="سقف التعاقد الإجمالي">Committed Contract Ceiling</span>
+                  <span class="font-mono font-bold text-white">
+                    <?= number_format((float)($contract['contract_value'] ?? 0)) ?> SAR
+                  </span>
+                </div>
+              </div>
+            </div>
 
-<script>
+            <!-- Contract Notes & Special Clauses -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 border-s-4 border-s-[#f97316]">
+              <h3 class="text-sm font-semibold text-white mb-2" data-en="Operational Notes & Special Clauses" data-ar="الملاحظات التشغيلية والشروط الخاصة">
+                Operational Notes & Special Clauses
+              </h3>
+              <p class="text-xs text-neutral-500 mb-4" data-en="Emergency dispatch thresholds, purity certificates, and delivery logistics instructions." data-ar="عتبات التوريد الطارئ وشهادات النقاوة وتعليمات لوجستيات التوصيل.">
+                Emergency dispatch thresholds, purity certificates, and delivery logistics instructions.
+              </p>
+              <div class="bg-[#09151f] p-4 border border-[#1a3346] rounded text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap">
+                <?= !empty($contract['notes']) ? htmlspecialchars($contract['notes']) : 'Standard gas supply protocol applied. No custom clauses logged.' ?>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Customer Account & Metadata (1 col) -->
+          <div class="space-y-6">
+            <!-- Account Details Card -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 border-s-4 border-s-[#f97316]">
+              <h3 class="text-sm font-semibold text-white mb-4" data-en="Client Commercial Account" data-ar="الحساب التجاري للعميل">
+                Client Commercial Account
+              </h3>
+              
+              <div class="flex items-center gap-3 pb-4 mb-4 border-b border-neutral-100 border-[#1a3346]">
+                <div class="w-10 h-10 rounded border border-[#1e3a50] bg-[#09151f] flex items-center justify-center font-mono font-bold text-slate-300">
+                  <?= htmlspecialchars($initials) ?>
+                </div>
+                <div class="min-w-0">
+                  <a href="<?= app_url('modules/crm_sales/client_profile.php?id=' . urlencode((string)$contract['client_id'])) ?>" class="text-sm font-bold text-white hover:text-teal-600 dark:hover:text-teal-400 hover:underline truncate block">
+                    <?= htmlspecialchars($contract['company_name']) ?>
+                  </a>
+                  <span class="text-xs text-neutral-500"><?= htmlspecialchars($contract['entity_type'] ?? 'Corporate') ?> · <?= htmlspecialchars($contract['segment'] ?? 'Industrial') ?></span>
+                </div>
+              </div>
+
+              <div class="space-y-3 text-xs">
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-neutral-500" data-en="Primary Contact" data-ar="جهة الاتصال">Primary Contact</span>
+                  <span class="font-medium text-white"><?= htmlspecialchars(trim(($contract['contact_first_name'] ?? '') . ' ' . ($contract['contact_last_name'] ?? ''))) ?></span>
+                </div>
+                <?php if (!empty($contract['job_title'])): ?>
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-neutral-500" data-en="Designation" data-ar="المسمى الوظيفي">Designation</span>
+                  <span class="text-slate-200"><?= htmlspecialchars($contract['job_title']) ?></span>
+                </div>
+                <?php endif; ?>
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-neutral-500" data-en="Email" data-ar="البريد الإلكتروني">Email</span>
+                  <a href="mailto:<?= htmlspecialchars($contract['email'] ?? '') ?>" class="font-mono text-teal-600 hover:underline truncate max-w-[180px]"><?= htmlspecialchars($contract['email'] ?? '—') ?></a>
+                </div>
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-neutral-500" data-en="Phone" data-ar="الهاتف">Phone</span>
+                  <span class="font-mono text-white"><?= htmlspecialchars($contract['phone'] ?? '—') ?></span>
+                </div>
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-neutral-500" data-en="CR Number" data-ar="السجل التجاري">CR Number</span>
+                  <span class="font-mono text-slate-200"><?= htmlspecialchars($contract['cr_number'] ?? '—') ?></span>
+                </div>
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-neutral-500" data-en="VAT / Tax ID" data-ar="الرقم الضريبي">VAT / Tax ID</span>
+                  <span class="font-mono text-slate-200"><?= htmlspecialchars($contract['tax_id'] ?? '—') ?></span>
+                </div>
+              </div>
+
+              <div class="mt-5 pt-4 border-t border-neutral-100 border-[#1a3346]">
+                <a href="<?= app_url('modules/crm_sales/client_profile.php?id=' . urlencode((string)$contract['client_id'])) ?>" class="w-full py-2 px-3 text-xs font-semibold text-center rounded border border-[#1e3a50] hover:border-neutral-900 dark:hover:border-white text-slate-200 block transition-colors">
+                  <span data-en="Open Full Customer 360" data-ar="فتح ملف العميل الكامل">Open Full Customer 360</span>
+                </a>
+              </div>
+            </div>
+
+            <!-- System Record Audit -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-md p-6 border-s-4 border-s-[#f97316]">
+              <h3 class="text-sm font-semibold text-white mb-3" data-en="Audit & Compliance Metadata" data-ar="بيانات التدقيق والامتثال">
+                Audit & Compliance Metadata
+              </h3>
+              <div class="space-y-2.5 text-xs font-mono text-slate-400">
+                <div class="flex justify-between py-1 border-b border-neutral-100 border-[#1a3346]">
+                  <span class="text-neutral-400">CREATED:</span>
+                  <span><?= !empty($contract['created_at']) ? htmlspecialchars(date('d M Y, H:i', strtotime($contract['created_at']))) : '—' ?></span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-neutral-100 border-[#1a3346]">
+                  <span class="text-neutral-400">UPDATED:</span>
+                  <span><?= !empty($contract['updated_at']) ? htmlspecialchars(date('d M Y, H:i', strtotime($contract['updated_at']))) : '—' ?></span>
+                </div>
+                <div class="flex justify-between py-1">
+                  <span class="text-neutral-400">HASH:</span>
+                  <span class="truncate max-w-[140px] text-neutral-500">SHA256:<?= substr(hash('sha256', (string)$contract['id'] . ($contract['contract_number'] ?? '')), 0, 10) ?></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+  <script>
     lucide.createIcons();
-</script>
+  </script>
 </body>
 </html>

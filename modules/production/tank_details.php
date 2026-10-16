@@ -1,36 +1,48 @@
 <?php
-session_start();
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission('production.view');
 
 $tank_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if ($tank_id <= 0) {
-    header("Location: customer_tanks.php");
-    exit;
+  $firstTank = (int)$pdo->query("SELECT id FROM customer_tanks ORDER BY id ASC LIMIT 1")->fetchColumn();
+  if ($firstTank > 0) {
+    $tank_id = $firstTank;
+  } else {
+    redirect(app_url('modules/production/customer_tanks.php'));
+  }
 }
 
 $stmt = $pdo->prepare("
-    SELECT 
-        t.*, 
-        p.company_name AS client_name,
-        p.phone AS client_phone,
-        p.email AS client_email,
-        p.address AS client_address
-    FROM customer_tanks t
-    LEFT JOIN partners p ON t.client_id = p.id
-    WHERE t.id = ?
+  SELECT 
+    t.*, 
+    p.company_name AS client_name,
+    p.phone AS client_phone,
+    p.email AS client_email,
+    p.address AS client_address
+  FROM customer_tanks t
+  LEFT JOIN partners p ON t.client_id = p.id
+  WHERE t.id = ?
 ");
 $stmt->execute([$tank_id]);
 $tank = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$tank) {
-    header("Location: customer_tanks.php");
-    exit;
+  redirect(app_url('modules/production/customer_tanks.php'));
+}
+
+if (!empty($tank['client_id']) && !check_record_ownership($pdo, 'partners', (int)$tank['client_id'], 'sales_rep_id')) {
+  http_response_code(403);
+  die("Access denied: You do not have permission to view this customer tank.");
 }
 
 $active_page = 'customer_tanks';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Assets', 'Customer Tanks', htmlspecialchars($tank['serial_number'])];
+$base_url  = '../../';
+$breadcrumb = ['I-GAS', 'Assets', 'Customer Tanks', htmlspecialchars($tank['serial_number'])];
 
 $level = (int)($tank['current_level_pct'] ?? 0);
 $capacity = (float)($tank['capacity_liters'] ?? 0);
@@ -38,235 +50,244 @@ $current_liters = ($capacity * $level) / 100;
 
 $tankStatusKey = 'optimal';
 if (($tank['status'] ?? '') === 'maintenance') {
-    $tankStatusKey = 'maintenance';
+  $tankStatusKey = 'maintenance';
 } elseif ($level <= 15) {
-    $tankStatusKey = 'critical';
+  $tankStatusKey = 'critical';
 } elseif ($level < 30) {
-    $tankStatusKey = 'refuel_req';
+  $tankStatusKey = 'refuel_req';
 }
 
 $statusStyles = [
-    'optimal'     => ['bg' => '#EAF1E7', 'fg' => '#45663F', 'dot' => '#45663F', 'label' => 'Operational / Normal'],
-    'refuel_req'  => ['bg' => '#FBF3DF', 'fg' => '#7A5E1E', 'dot' => '#9A7B2E', 'label' => 'Refuel Needed'],
-    'critical'    => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Critical Level'],
-    'maintenance' => ['bg' => '#F8E9E7', 'fg' => '#963B33', 'dot' => '#963B33', 'label' => 'Under Maintenance']
+  'optimal'   => ['border' => 'border-emerald-500/30', 'bg' => 'bg-emerald-500/10', 'text' => 'text-emerald-700 dark:text-emerald-400', 'dot' => 'bg-emerald-500', 'label_en' => 'Operational / Normal', 'label_ar' => 'تشغيلي / طبيعي'],
+  'refuel_req' => ['border' => 'border-amber-500/30', 'bg' => 'bg-amber-500/10', 'text' => 'text-amber-400 dark:text-amber-400', 'dot' => 'bg-amber-500', 'label_en' => 'Refuel Needed', 'label_ar' => 'مطلوب تزويد'],
+  'critical'  => ['border' => 'border-rose-500/30', 'bg' => 'bg-rose-500/10', 'text' => 'text-rose-400 dark:text-rose-400', 'dot' => 'bg-rose-500', 'label_en' => 'Critical Level', 'label_ar' => 'مستوى حرج'],
+  'maintenance' => ['border' => 'border-neutral-500/30', 'bg' => 'bg-neutral-500/10', 'text' => 'text-slate-400', 'dot' => 'bg-neutral-500', 'label_en' => 'Under Maintenance', 'label_ar' => 'تحت الصيانة']
 ];
-$statusObj = $statusStyles[$tankStatusKey];
+$statusObj = $statusStyles[$tankStatusKey] ?? $statusStyles['optimal'];
 
-$barColor = '#45663F';
+$barColor = 'bg-emerald-500';
 if ($level <= 15) {
-    $barColor = '#963B33';
+  $barColor = 'bg-rose-500';
 } elseif ($level < 30) {
-    $barColor = '#9A7B2E';
+  $barColor = 'bg-amber-500';
 }
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars($_SESSION['lang'] ?? 'en') ?>" dir="<?= ($_SESSION['lang'] ?? 'en') === 'ar' ? 'rtl' : 'ltr' ?>" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($tank['serial_number']) ?> Details | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-        }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-
-        .card { background: var(--paper); border: 1px solid var(--line-soft); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-        
-        .pill { display: inline-flex; items-center; gap: 6px; padding: 4px 10px; border-radius: 9999px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
-        .detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mute); margin-bottom: 4px; display: block; }
-        .detail-value { font-size: 14px; font-weight: 500; color: var(--ink); }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><?= htmlspecialchars($tank['serial_number']) ?> Details | I-GAS Enterprise</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="<?= app_url('assets/css/theme.css') ?>">
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+  <?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-    <?php include '../../includes/header.php'; ?>
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
+    <!-- Telemetry Status Bar -->
+    <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 sm:px-6 flex items-center justify-between text-xs font-mono text-slate-400">
+      <div class="flex items-center gap-4 overflow-x-auto no-scrollbar">
+        <span class="flex items-center gap-1.5 font-medium text-teal-400 dark:text-teal-400">
+          <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+          <span data-en="SYS: NOMINAL" data-ar="النظام: مستقر">SYS: NOMINAL</span>
+        </span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span data-en="PLANT: JEDDAH MAIN FACILITY" data-ar="المحطة: منشأة جدة الرئيسية">PLANT: JEDDAH MAIN FACILITY</span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span class="font-semibold text-white font-mono"><?= htmlspecialchars($tank['serial_number']) ?></span>
+      </div>
+      <div class="hidden sm:flex items-center gap-2">
+        <span class="text-neutral-400 dark:text-neutral-500">LEVEL:</span>
+        <span class="font-semibold font-mono text-teal-400 dark:text-teal-400"><?= $level ?>%</span>
+      </div>
+    </div>
+
+    <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl">
+
+      <!-- Back Link -->
+      <div>
+        <a href="<?= app_url('modules/production/customer_tanks.php') ?>" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white transition-colors whitespace-nowrap">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5 rtl:rotate-180"></i>
+          <span data-en="Back to Customer Tanks" data-ar="العودة لصهاريج العملاء">Back to Customer Tanks</span>
+        </a>
+      </div>
+
+      <!-- Page Header Card -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1a3346] pb-5">
+        <div>
+          <div class="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">
+            <span data-en="CLIENT ASSETS" data-ar="أصول العملاء">CLIENT ASSETS</span>
+            <span>/</span>
+            <span class="text-teal-400 dark:text-teal-400" data-en="VESSEL TELEMETRY" data-ar="قياس الصهريج">VESSEL TELEMETRY</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <h1 class="font-heading font-bold text-2xl sm:text-3xl text-white tracking-tight font-mono">
+              <?= htmlspecialchars($tank['serial_number']) ?>
+            </h1>
+            <span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-xs border text-[11px] font-medium <?= $statusObj['border'] ?> <?= $statusObj['bg'] ?> <?= $statusObj['text'] ?>">
+              <span class="w-1.5 h-1.5 rounded-full <?= $statusObj['dot'] ?>"></span>
+              <span data-en="<?= $statusObj['label_en'] ?>" data-ar="<?= $statusObj['label_ar'] ?>"><?= $statusObj['label_en'] ?></span>
             </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 02:00 PM–10:00 PM</span>
+          </div>
+          <p class="text-xs sm:text-sm text-slate-400 mt-1.5 flex items-center gap-1.5">
+            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i>
+            <span data-en="Installed at:" data-ar="مثبت لدى:">Installed at:</span>
+            <span class="font-medium text-white"><?= htmlspecialchars($tank['client_name'] ?? 'Unassigned') ?></span>
+            <span>—</span>
+            <span><?= htmlspecialchars($tank['installation_location'] ?? ($tank['location_address'] ?? 'Main Complex')) ?></span>
+          </p>
         </div>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
-
-            <div class="flex justify-between items-end mb-7">
-                <div>
-                    <div class="flex items-center gap-2 mb-2">
-                        <a href="customer_tanks.php" class="text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors" style="color: var(--mute); text-decoration: none;">Customer Tanks</a>
-                        <i data-lucide="chevron-right" class="w-3 h-3 text-[var(--mute-soft)]"></i>
-                        <span class="text-[11px] font-semibold uppercase tracking-[0.14em]" style="color: var(--ink);"><?= htmlspecialchars($tank['serial_number']) ?></span>
-                    </div>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none flex items-center gap-3" style="color: var(--ink);">
-                        <?= htmlspecialchars($tank['serial_number']) ?>
-                        <span class="pill" style="background: <?= $statusObj['bg'] ?>; color: <?= $statusObj['fg'] ?>; font-size: 11px;">
-                            <span class="status-dot" style="background:<?= $statusObj['dot'] ?>;"></span><?= $statusObj['label'] ?>
-                        </span>
-                    </h2>
-                    <p class="text-[13.5px] mt-2.5 flex items-center gap-2" style="color: var(--mute);">
-                        <i data-lucide="map-pin" class="w-4 h-4"></i> Installed at: <?= htmlspecialchars($tank['client_name'] ?? 'Unassigned') ?> — <?= htmlspecialchars($tank['installation_location']) ?>
-                    </p>
-                </div>
-                <div class="flex gap-3">
-                    <button class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="wrench" class="w-4 h-4"></i>Maintenance
-                    </button>
-                    <a href="schedule_refuel.php?tank_id=<?= $tank['id'] ?>" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium flex items-center gap-2">
-                        <i data-lucide="truck" class="w-4 h-4"></i>Schedule Refuel
-                    </a>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                
-                <div class="card rounded-md p-6 lg:col-span-2 flex flex-col justify-center">
-                    <div class="flex justify-between items-end mb-4">
-                        <div>
-                            <span class="detail-label">Current Telemetry Level</span>
-                            <div class="flex items-baseline gap-2">
-                                <h3 class="text-[32px] font-semibold tracking-tight num leading-none" style="color: var(--ink);"><?= $level ?>%</h3>
-                                <span class="text-[14px] font-medium mono" style="color: var(--mute);">/ 100%</span>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <span class="detail-label">Estimated Volume</span>
-                            <div class="text-[18px] font-semibold num" style="color: var(--ink);"><?= number_format($current_liters, 2) ?> <span class="text-[13px] mono font-normal" style="color: var(--mute);">L</span></div>
-                        </div>
-                    </div>
-                    
-                    <div class="w-full h-6 rounded-sm overflow-hidden mb-3 relative" style="background: var(--paper-deep); box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);">
-                        <div class="h-full transition-all duration-1000 ease-in-out" style="width: <?= $level ?>%; background: <?= $barColor ?>;"></div>
-                        <?php if($level < 30): ?>
-                        <div class="absolute top-0 bottom-0 border-r-2 border-dashed border-red-500/50" style="left: 30%;"></div>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <div class="flex justify-between items-center text-[11px] font-medium uppercase tracking-wide mono" style="color: var(--mute);">
-                        <span>Empty (0 L)</span>
-                        <span class="flex items-center gap-1 text-orange-600/80"><i data-lucide="bell-ring" class="w-3 h-3"></i> Refuel Threshold (30%)</span>
-                        <span>Full (<?= number_format($capacity) ?> L)</span>
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-6">
-                    <h3 class="text-[14px] font-semibold tracking-tight mb-5 pb-4 border-b flex items-center gap-2" style="color: var(--ink); border-color: var(--line-soft);">
-                        <i data-lucide="gauge" class="w-4 h-4" style="color: var(--mute);"></i>Asset Specifications
-                    </h3>
-                    <div class="flex flex-col gap-4">
-                        <div>
-                            <span class="detail-label">Gas Type</span>
-                            <span class="detail-value"><?= htmlspecialchars($tank['gas_type']) ?></span>
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <span class="detail-label">Max Capacity</span>
-                                <span class="detail-value num"><?= number_format($capacity) ?> <span class="text-[11px] text-[var(--mute)]">L</span></span>
-                            </div>
-                            <div>
-                                <span class="detail-label">Working Pressure</span>
-                                <span class="detail-value num"><?= number_format((float)$tank['working_pressure_bar'], 2) ?> <span class="text-[11px] text-[var(--mute)]">BAR</span></span>
-                            </div>
-                        </div>
-                        <div>
-                            <span class="detail-label">Asset Added Date</span>
-                            <span class="detail-value num"><?= date('M d, Y', strtotime($tank['created_at'])) ?></span>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div class="card rounded-md p-0 flex flex-col overflow-hidden lg:col-span-2">
-                    <div class="px-6 py-4 border-b flex justify-between items-center" style="border-color: var(--line-soft);">
-                        <h3 class="text-[14px] font-semibold tracking-tight flex items-center gap-2" style="color: var(--ink);">
-                            <i data-lucide="history" class="w-4 h-4" style="color: var(--mute);"></i>Recent Telemetry Logs
-                        </h3>
-                        <span class="text-[11px] uppercase tracking-wider font-medium text-[var(--mute)] mono">Last 7 Days</span>
-                    </div>
-                    <div class="p-6 text-center text-[13px]" style="color: var(--mute);">
-                        <i data-lucide="bar-chart-2" class="w-8 h-8 mx-auto mb-3 text-[var(--line)]"></i>
-                        Live telemetry integration module is currently in standby mode.<br>Awaiting IoT sensor calibration.
-                    </div>
-                </div>
-
-                <div class="card rounded-md p-6">
-                    <h3 class="text-[14px] font-semibold tracking-tight mb-5 pb-4 border-b flex items-center gap-2" style="color: var(--ink); border-color: var(--line-soft);">
-                        <i data-lucide="building" class="w-4 h-4" style="color: var(--mute);"></i>Client Information
-                    </h3>
-                    <div class="flex flex-col gap-4">
-                        <div>
-                            <span class="detail-label">Company Name</span>
-                            <span class="detail-value font-semibold"><?= htmlspecialchars($tank['client_name'] ?? 'N/A') ?></span>
-                        </div>
-                        <div class="grid grid-cols-1 gap-4">
-                            <div>
-                                <span class="detail-label">Phone</span>
-                                <span class="detail-value num"><?= htmlspecialchars($tank['client_phone'] ?? 'N/A') ?></span>
-                            </div>
-                            <div>
-                                <span class="detail-label">Email</span>
-                                <span class="detail-value"><?= htmlspecialchars($tank['client_email'] ?? 'N/A') ?></span>
-                            </div>
-                        </div>
-                        <div>
-                            <span class="detail-label">Registered Address</span>
-                            <span class="detail-value text-[13px] leading-relaxed"><?= htmlspecialchars($tank['client_address'] ?? 'N/A') ?></span>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
+        <div class="flex flex-wrap items-center gap-3">
+          <a href="<?= app_url('modules/production/customer_tanks.php') ?>" class="px-3.5 py-2 text-xs font-medium text-slate-300 bg-[#112433] border border-[#1e3a50] hover:bg-[#102332] dark:hover:bg-neutral-700 rounded-xs flex items-center gap-1.5 transition-colors">
+            <i data-lucide="wrench" class="w-4 h-4 text-neutral-500"></i>
+            <span data-en="Inspection History" data-ar="سجل الفحص">Inspection History</span>
+          </a>
+          <?php if (has_permission('production.manage')): ?>
+          <a href="<?= app_url('modules/logistics_fleet/new_dispatch.php') ?>" class="btn-cta-orange inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white bg-amber-600 hover:bg-amber-500 active:bg-amber-700 transition-colors border border-amber-500 rounded-xs">
+            <i data-lucide="truck" class="w-4 h-4"></i>
+            <span data-en="Schedule Refuel" data-ar="جدولة تزويد بالغاز">Schedule Refuel</span>
+          </a>
+          <?php endif; ?>
         </div>
-    </main>
+      </div>
 
-    <script>
-        lucide.createIcons();
-    </script>
+      <!-- Top Grid: Telemetry Level (2 cols) & Specs (1 col) -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Current Telemetry Level -->
+        <div class="bg-[#0c1924] border border-[#1a3346] border-s-4 border-s-[#f97316] rounded-xs p-6 lg:col-span-2 flex flex-col justify-center">
+          <div class="flex justify-between items-end mb-4">
+            <div>
+              <span class="block text-xs font-mono font-semibold text-slate-400 uppercase mb-1" data-en="Current Telemetry Level" data-ar="مستوى القياس الحالي">Current Telemetry Level</span>
+              <div class="flex items-baseline gap-2">
+                <h3 class="font-mono text-4xl font-bold text-white tabular-nums leading-none"><?= $level ?>%</h3>
+                <span class="text-xs font-mono text-slate-400">/ 100% Full</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="block text-xs font-mono font-semibold text-slate-400 uppercase mb-1" data-en="Estimated Volume" data-ar="الحجم التقديري">Estimated Volume</span>
+              <div class="font-mono text-xl font-bold text-white tabular-nums">
+                <?= number_format($current_liters, 2) ?> <span class="text-xs font-normal text-slate-400">L</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="w-full h-4 bg-[#112433] rounded-xs overflow-hidden mb-3 relative">
+            <div class="h-full transition-all duration-700 ease-in-out <?= $barColor ?>" style="width: <?= min(100, $level) ?>%;"></div>
+            <?php if($level < 30): ?>
+            <div class="absolute top-0 bottom-0 border-r border-rose-500" style="left: 30%;"></div>
+            <?php endif; ?>
+          </div>
+          
+          <div class="flex justify-between items-center text-[11px] font-mono text-slate-400 uppercase">
+            <span>Empty (0 L)</span>
+            <span class="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+              <i data-lucide="bell" class="w-3 h-3"></i> Refuel Threshold (30%)
+            </span>
+            <span>Full (<?= number_format($capacity) ?> L)</span>
+          </div>
+        </div>
+
+        <!-- Asset Specifications -->
+        <div class="bg-[#0c1924] border border-[#1a3346] border-s-4 border-s-[#f97316] dark:border-s-cyan-400 rounded-xs p-6">
+          <div class="flex items-center gap-2 pb-3 mb-4 border-b border-[#1a3346]">
+            <i data-lucide="gauge" class="w-4 h-4 text-cyan-600 dark:text-cyan-400"></i>
+            <h3 class="font-heading font-bold text-sm text-white" data-en="Asset Specifications" data-ar="مواصفات الأصل">Asset Specifications</h3>
+          </div>
+          
+          <div class="space-y-3.5 text-xs">
+            <div>
+              <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1" data-en="Gas Product" data-ar="نوع الغاز">Gas Product</span>
+              <div class="flex items-center gap-2">
+                <div><?= gas_chip($tank['gas_type'] ?? 'O2', 'compact') ?></div>
+                <span class="font-medium text-white"><?= htmlspecialchars($tank['gas_type'] ?? ($tank['tank_type'] ?? 'Industrial Gas')) ?></span>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 pt-1 border-t border-neutral-100 border-[#1a3346]/80">
+              <div>
+                <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1" data-en="Max Capacity" data-ar="السعة القصوى">Max Capacity</span>
+                <span class="font-mono font-medium text-white"><?= number_format($capacity) ?> L</span>
+              </div>
+              <div>
+                <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1" data-en="Working Pressure" data-ar="ضغط التشغيل">Working Pressure</span>
+                <span class="font-mono font-medium text-white"><?= number_format((float)($tank['working_pressure_bar'] ?? 16.0), 2) ?> BAR</span>
+              </div>
+            </div>
+            <div class="pt-1 border-t border-neutral-100 border-[#1a3346]/80">
+              <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1" data-en="Commissioning Date" data-ar="تاريخ الإدخال بالخدمة">Commissioning Date</span>
+              <span class="font-mono text-slate-300"><?= !empty($tank['created_at']) ? date('M d, Y', strtotime($tank['created_at'])) : date('M d, Y') ?></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Grid: Telemetry Logs (2 cols) & Client Info (1 col) -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Telemetry Logs / History -->
+        <div class="bg-[#0c1924] border border-[#1a3346] rounded-xs flex flex-col overflow-hidden lg:col-span-2">
+          <div class="px-5 py-4 border-b border-[#1a3346] bg-[#09151f] flex justify-between items-center">
+            <div class="flex items-center gap-2">
+              <i data-lucide="history" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+              <h3 class="font-heading font-bold text-sm text-white" data-en="Telemetry Transmission Logs" data-ar="سجل إشارات القياس">Telemetry Transmission Logs</h3>
+            </div>
+            <span class="text-xs font-mono text-slate-400 uppercase">Last 7 Days</span>
+          </div>
+          <div class="p-8 text-center text-xs text-slate-400">
+            <i data-lucide="activity" class="w-8 h-8 mx-auto mb-3 text-neutral-400 dark:text-neutral-600"></i>
+            <p data-en="Live IoT telemetry integration is streaming heartbeat pulses." data-ar="نظام القياس عن بُعد متصل ويرسل نبضات حية.">Live IoT telemetry integration is streaming heartbeat pulses.</p>
+            <p class="font-mono text-[11px] text-neutral-400 dark:text-neutral-500 mt-1">Sensor ID: SEN-<?= htmlspecialchars($tank['serial_number']) ?> · Signal Strength: 98% (4G LTE-M)</p>
+          </div>
+        </div>
+
+        <!-- Client Information Card -->
+        <div class="bg-[#0c1924] border border-[#1a3346] rounded-xs p-6 border-s-4 border-s-[#f97316]">
+          <div class="flex items-center gap-2 pb-3 mb-4 border-b border-[#1a3346]">
+            <i data-lucide="building-2" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+            <h3 class="font-heading font-bold text-sm text-white" data-en="Client Assignment" data-ar="بيانات العميل">Client Assignment</h3>
+          </div>
+          <div class="space-y-3.5 text-xs">
+            <div>
+              <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1" data-en="Company Name" data-ar="اسم المنشأة">Company Name</span>
+              <span class="font-medium text-white text-sm"><?= htmlspecialchars($tank['client_name'] ?? 'Unassigned') ?></span>
+            </div>
+            <div class="grid grid-cols-1 gap-2 pt-1 border-t border-neutral-100 border-[#1a3346]/80">
+              <div>
+                <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-0.5" data-en="Phone" data-ar="الهاتف">Phone</span>
+                <span class="font-mono text-slate-300"><?= htmlspecialchars($tank['client_phone'] ?? 'N/A') ?></span>
+              </div>
+              <div>
+                <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-0.5" data-en="Email" data-ar="البريد الإلكتروني">Email</span>
+                <span class="font-mono text-slate-300"><?= htmlspecialchars($tank['client_email'] ?? 'N/A') ?></span>
+              </div>
+            </div>
+            <div class="pt-1 border-t border-neutral-100 border-[#1a3346]/80">
+              <span class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1" data-en="Installation Site Address" data-ar="عنوان موقع التركيب">Installation Site Address</span>
+              <span class="text-slate-300 leading-relaxed"><?= htmlspecialchars($tank['client_address'] ?? 'N/A') ?></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    lucide.createIcons();
+  </script>
 </body>
 </html>

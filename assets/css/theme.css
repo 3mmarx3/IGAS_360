@@ -1,0 +1,1006 @@
+/**
+ * I-GAS ENTERPRISE — "PRESSURE & PURITY" VISUAL IDENTITY THEME
+ * Concept: P&ID engineering drawings + cryogenic frost + safety-signage discipline
+ * Strictly Zero Shadows. Depth via hairlines, tonal surfaces, and engineering grids.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700;800&family=Reem+Kufi:wght@500;600;700&display=swap");
+
+/* ==========================================================================
+   1. COLOR SYSTEM & CSS TOKENS (LIGHT & DARK CONTROL-ROOM MODE)
+   ========================================================================== */
+
+:root {
+  /* Brand Palette */
+  --ink: #f1f5f9; /* Liquid Nitrogen Ink (High contrast white-smoke) */
+  --ink-deep: #ffffff;
+  --ink-soft: #cbd5e1;
+  --ink-hover: #ffffff;
+  --ink-muted: #94a3b8;
+
+  --primary: #2dd4bf; /* Cryo Teal */
+  --primary-bright: #38bdf8; /* Frost Cyan */
+  --primary-soft: #0d2a38;
+  --primary-dark: #0f766e;
+
+  --cryo-teal: #2dd4bf;
+  --frost-cyan: #38bdf8;
+  --safety-orange: #f97316;
+
+  --accent: #f97316; /* Safety Valve Orange (CTA / Key Actions) */
+  --accent-hover: #ea580c;
+  --accent-soft: rgba(249, 115, 22, 0.15);
+  --accent-dark: #c2410c;
+
+  /* Tonal Surfaces (Deep Industrial Navy & Slate Blue) */
+  --surface-0: #071018; /* App Canvas Background */
+  --surface-1: #0c1924; /* Instrument Panel Card / Container */
+  --surface-2: #09151f; /* Table Headers / Secondary Panel */
+  --surface-3: #102332; /* Hover states / Active rows */
+
+  /* Hairlines */
+  --line: #1a3346; /* Primary Hairline Border */
+  --line-soft: #152a3a; /* Subtle Table/Card Divider */
+  --line-hard: #234257; /* Tag & Input Borders */
+
+  --paper: #0c1924;
+  --paper-dim: #071018;
+  --paper-deep: #060e14;
+  --mute: #94a3b8;
+  --mute-soft: #64748b;
+
+  /* Focus Outline Indicator */
+  --focus: #f97316;
+
+  /* Typography & Content Colors */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #071018;
+
+  /* Industrial Status Scale */
+  --status-success: #1fa971; /* Purged / Nominal / OK */
+  --status-warning: #f2b01e; /* Caution / Warning */
+  --status-danger: #d93636; /* Hazard / Critical Alert */
+  --status-info: #2f80ed; /* Technical Notice */
+
+  /* Sidebar Variables */
+  --sidebar-bg: #071018;
+  --sidebar-surface: #0c1924;
+  --sidebar-line: #1a3346;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-active: #38bdf8;
+  --sidebar-active-indicator: #f97316;
+
+  /* Gas Cylinder Color Standard */
+  --gas-o2: #0066cc;
+  --gas-n2: #1f2937;
+  --gas-ar: #047857;
+  --gas-co2: #6b7280;
+  --gas-c2h2: #881337;
+  --gas-h2: #dc2626;
+  --gas-he: #78350f;
+  --gas-air: #374151;
+  --gas-lpg: #ea580c;
+  --gas-n2o: #2563eb;
+}
+
+/* Dark Mode: Deep Industrial Control-Room Navy (Never pure black) */
+html.dark,
+[data-theme="dark"] {
+  --ink: #f1f5f9;
+  --ink-deep: #ffffff;
+  --ink-soft: #cbd5e1;
+  --ink-hover: #ffffff;
+  --ink-muted: #94a3b8;
+
+  --primary: #2dd4bf;
+  --primary-bright: #38bdf8;
+  --primary-soft: #0d2a38;
+  --primary-dark: #0f766e;
+
+  --cryo-teal: #2dd4bf;
+  --frost-cyan: #38bdf8;
+  --safety-orange: #f97316;
+
+  --accent: #f97316;
+  --accent-hover: #ea580c;
+  --accent-soft: rgba(249, 115, 22, 0.15);
+  --accent-dark: #c2410c;
+
+  --surface-0: #071018;
+  --surface-1: #0c1924;
+  --surface-2: #09151f;
+  --surface-3: #102332;
+
+  --line: #1a3346;
+  --line-soft: #152a3a;
+  --line-hard: #234257;
+
+  --paper: #0c1924;
+  --paper-dim: #071018;
+  --paper-deep: #060e14;
+  --mute: #94a3b8;
+  --mute-soft: #64748b;
+
+  --focus: #f97316;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #071018;
+
+  --status-success: #27c283;
+  --status-warning: #f5bc38;
+  --status-danger: #e64c4c;
+  --status-info: #4d96f5;
+
+  --sidebar-bg: #071018;
+  --sidebar-surface: #0c1924;
+  --sidebar-line: #1a3346;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-active: #38bdf8;
+  --sidebar-active-indicator: #f97316;
+}
+
+/* ==========================================================================
+   2. ABSOLUTE ZERO SHADOW SAFETY NET
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none;
+  -webkit-box-shadow: none !important;
+}
+
+/* Universal Industrial Input & Form Controls Styling */
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="time"],
+select,
+textarea {
+  background-color: #08131c !important;
+  border: 1px solid #1e3a50 !important;
+  color: #f1f5f9 !important;
+  border-radius: 0.375rem;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #64748b !important;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #f97316 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Focus Indicators: 2px solid hairline with offset */
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--focus) !important;
+  outline-offset: 2px !important;
+  border-color: var(--focus) !important;
+}
+
+/* ==========================================================================
+   3. TYPOGRAPHY HIERARCHY (TECHNICAL, PRECISE, BILINGUAL)
+   ========================================================================== */
+
+body {
+  font-family:
+    "IBM Plex Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  background-color: var(--surface-0);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Bilingual Type Pairing */
+html.arabic-mode body,
+html[dir="rtl"] body {
+  font-family: "IBM Plex Sans Arabic", "IBM Plex Sans", sans-serif !important;
+}
+
+.font-display {
+  font-family: "Oxanium", "Reem Kufi", sans-serif;
+  letter-spacing: -0.01em;
+}
+
+html.arabic-mode .font-display,
+html[dir="rtl"] .font-display {
+  font-family: "Reem Kufi", "Oxanium", sans-serif !important;
+  letter-spacing: 0;
+}
+
+.font-mono,
+.mono {
+  font-family: "IBM Plex Mono", monospace;
+  font-feature-settings: "tnum" 1;
+}
+
+.num {
+  font-family: "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Technical Instrument Overline */
+.section-overline {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   4. SIGNATURE GAS PLANT DETAILS & PATTERNS
+   ========================================================================== */
+
+/* Subtle 24px Engineering Blueprint Grid (P&ID canvas) */
+.blueprint-grid {
+  background-image:
+    linear-gradient(to right, rgba(11, 110, 138, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(11, 110, 138, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+html.dark .blueprint-grid,
+[data-theme="dark"] .blueprint-grid {
+  background-image:
+    linear-gradient(to right, rgba(25, 181, 201, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(25, 181, 201, 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Engineering Pipeline Section Dividers */
+.pipe-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  position: relative;
+  width: 100%;
+  margin: 1.5rem 0;
+}
+
+.pipe-divider::before,
+.pipe-divider::after {
+  content: "";
+  flex: 1;
+  height: 2px;
+  background: var(--line);
+}
+
+.pipe-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2px 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--primary);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Corner-Notched Cards (Chamfered engineering look, small 2px-6px radiuses) */
+.card-notched {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  position: relative;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+
+html[dir="rtl"] .card-notched,
+html.arabic-mode .card-notched {
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+}
+
+/* Flat Card System with subtle industrial borders and clean surfaces */
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+/* Technical Start-side Accent Rule Cards */
+.card-accent-rule {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-inline-start: 4px solid var(--safety-orange);
+  border-radius: 2px;
+}
+
+.card-accent-teal {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-inline-start: 4px solid var(--primary-bright);
+  border-radius: 2px;
+}
+
+/* Serial & Instrument Plate Tag */
+.tag-plate {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  background: #0d2a38;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: 2px;
+  color: #2dd4bf;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.4;
+}
+
+/* Tank-Fill Progress Level Bar (10% tick marks) */
+.level-bar-container {
+  position: relative;
+  width: 100%;
+}
+
+.level-bar-track {
+  height: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+.level-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+
+.level-bar-fill.fill-warning {
+  background: var(--status-warning);
+}
+
+.level-bar-fill.fill-danger {
+  background: var(--status-danger);
+}
+
+.level-bar-fill.fill-success {
+  background: var(--status-success);
+}
+
+.level-bar-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 3px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+/* GHS Safety Hazard Diamond Badge */
+.ghs-diamond-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ghs-diamond {
+  width: 30px;
+  height: 30px;
+  transform: rotate(45deg);
+  border: 2.5px solid var(--status-danger);
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 6px;
+}
+
+.ghs-diamond > * {
+  transform: rotate(-45deg);
+  color: #1a1a1a;
+}
+
+/* Safety Warning Diagonal Stripes */
+.hazard-stripes {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--accent),
+    var(--accent) 12px,
+    #0a1b26 12px,
+    #0a1b26 24px
+  );
+}
+
+/* Chemical Gas Chips */
+.gas-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-1);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.gas-chip-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.gas-formula {
+  font-family: "Oxanium", "IBM Plex Mono", monospace;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Buttons (Strictly Flat Solid / Technical Outline) */
+.btn-cta-orange {
+  background: #f97316 !important;
+  color: #ffffff !important;
+  border: 1px solid #f97316 !important;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0.55rem 1.15rem;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn-cta-orange:hover {
+  background: #ea580c !important;
+  border-color: #ea580c !important;
+}
+
+.btn-secondary {
+  background: #112433 !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #234257 !important;
+  padding: 0.55rem 1.15rem;
+  border-radius: 3px;
+  font-weight: 500;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+  text-decoration: none;
+}
+
+.btn-secondary:hover {
+  background: #173042 !important;
+  border-color: #335975 !important;
+  color: #ffffff !important;
+}
+
+.btn-teal-outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0.55rem 1.15rem;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btn-teal-outline:hover {
+  background: var(--surface-2);
+}
+
+html.dark .btn-teal-outline {
+  color: var(--primary-bright);
+  border-color: var(--primary-bright);
+}
+
+/* Modals & Dropdown Scrim Separation (1px border + semi-opaque scrim) */
+.modal-scrim {
+  background: rgba(7, 19, 27, 0.7);
+  backdrop-filter: blur(2px);
+}
+
+.modal-dialog {
+  background: var(--surface-1);
+  border: 1px solid var(--line-hard);
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   5. SIDEBAR NAVIGATION & ACTIVE INDICATOR (ORANGE BAR + FROST CYAN TEXT)
+   ========================================================================== */
+
+#main-sidebar {
+  background: var(--sidebar-bg) !important;
+  color: var(--sidebar-text) !important;
+  border-inline-end: 1px solid var(--sidebar-line) !important;
+}
+
+.nav-row {
+  color: var(--sidebar-text);
+  border-inline-start: 3px solid transparent;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+  text-decoration: none;
+  position: relative;
+  border-radius: 2px;
+}
+
+.nav-row:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+.nav-row.active {
+  background-color: var(--sidebar-surface) !important;
+  color: var(--sidebar-text-active) !important; /* Frost Cyan #19B5C9 */
+  border-inline-start: 3px solid var(--sidebar-active-indicator) !important; /* Safety Valve Orange #FF6B1A */
+  font-weight: 600;
+}
+
+.nav-row.active svg,
+.nav-row.active i[data-lucide] {
+  color: var(--sidebar-text-active) !important;
+}
+
+/* ==========================================================================
+   6. GLOBAL DESIGN SYSTEM ENFORCEMENT (DESIGN #3 - CLIENTS DIRECTORY)
+   ========================================================================== */
+
+/* Universal Canvas and Surfaces */
+.bg-white,
+.dark\:bg-neutral-900,
+.dark\:bg-neutral-950,
+.bg-neutral-900,
+.bg-neutral-950 {
+  background-color: var(--surface-1) !important;
+}
+
+.bg-neutral-50,
+.bg-neutral-50\/50,
+.dark\:bg-neutral-900\/50 {
+  background-color: var(--surface-0) !important;
+}
+
+.bg-neutral-100,
+.bg-neutral-100\/80,
+.bg-neutral-100\/60,
+.dark\:bg-neutral-800,
+.dark\:bg-neutral-800\/50,
+.dark\:bg-neutral-800\/60,
+.dark\:bg-neutral-850 {
+  background-color: var(--surface-2) !important;
+}
+
+.hover\:bg-neutral-50:hover,
+.dark\:hover\:bg-neutral-800\/40:hover,
+.dark\:hover\:bg-neutral-800\/50:hover,
+.hover\:bg-neutral-100:hover,
+.dark\:hover\:bg-neutral-700:hover {
+  background-color: var(--surface-3) !important;
+}
+
+/* Hairlines, Borders and Dividers */
+.border-neutral-200,
+.dark\:border-neutral-800 {
+  border-color: var(--line) !important;
+}
+
+.border-neutral-300,
+.dark\:border-neutral-700 {
+  border-color: var(--line-hard) !important;
+}
+
+.divide-neutral-200 > :not([hidden]) ~ :not([hidden]),
+.dark\:divide-neutral-800 > :not([hidden]) ~ :not([hidden]),
+.divide-neutral-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--line-soft) !important;
+}
+
+/* Typography Colors */
+.text-neutral-900,
+.dark\:text-neutral-100,
+.dark\:text-white {
+  color: var(--ink) !important;
+}
+
+.text-neutral-600,
+.text-neutral-500,
+.dark\:text-neutral-400 {
+  color: var(--ink-muted) !important;
+}
+
+.text-neutral-700,
+.dark\:text-neutral-300,
+.dark\:text-neutral-200 {
+  color: var(--ink-soft) !important;
+}
+
+/* All Bento / KPI metric cards inherit the signature Left Safety Orange Accent */
+.kpi-card,
+[class*="border-s-[3px]"],
+[class*="border-s-4"],
+[class*="border-l-4"] {
+  border-inline-start-color: var(--safety-orange) !important;
+}
+
+/* ==========================================================================
+   7. 200% PIXEL-PERFECT UI/UX REFINEMENT, INPUTS, BUTTONS & SCROLLBARS
+   ========================================================================== */
+
+/* Universal Dark Industrial Scrollbars (Firefox, Chrome, Safari, Edge) */
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: #1e3a50 #071018 !important;
+}
+
+::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: #071018 !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e3a50 !important;
+  border-radius: 3px !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2dd4bf !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: #071018 !important;
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: #1e3a50 #071018 !important;
+}
+
+/* Standardized Dark Industrial Inputs, Selects & Form Controls */
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not(
+    [type="button"]
+  ):not([type="reset"]):not([type="range"]):not([type="file"]):not(
+    [type="hidden"]
+  ):not(.border-none):not(.border-0):not([class*="border-none"]):not(
+    [class*="border-0"]
+  ),
+select {
+  background-color: #07111a !important;
+  border: 1px solid #1e3a50 !important;
+  border-radius: 0.375rem !important; /* rounded-md */
+  color: #f1f5f9 !important;
+  font-size: 0.75rem !important; /* text-xs */
+  padding: 0.375rem 0.75rem !important;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease !important;
+}
+
+textarea {
+  background-color: #07111a !important;
+  border: 1px solid #1e3a50 !important;
+  border-radius: 0.375rem !important;
+  color: #f1f5f9 !important;
+  font-size: 0.75rem !important;
+  padding: 0.5rem 0.75rem !important;
+  min-height: 4.5rem !important;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease !important;
+}
+
+input:not(.border-none):not(.border-0):not([class*="border-none"]):not(
+    [class*="border-0"]
+  ):focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: #f97316 !important;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4) !important;
+}
+
+/* Dedicated Search Icon Clearance: Guaranteed No Overlap */
+.relative > input[class*="ps-"],
+.relative > input[class*="pl-"],
+input[type="search"],
+input.has-search-icon {
+  padding-inline-start: 2.25rem !important; /* 36px clearance for icon at start-3 */
+}
+
+/* Primary & Secondary Header Button Sizing (h-9 px-3.5 text-xs font-semibold) */
+.btn-cta-orange {
+  height: 2.25rem !important;
+  padding: 0.5rem 0.875rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  border-radius: 0.375rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.5rem !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  background-color: var(--safety-orange) !important;
+  color: #ffffff !important;
+  border: 1px solid transparent !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.btn-cta-orange:hover {
+  background-color: #ea580c !important;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.3) !important;
+}
+
+.btn-secondary {
+  height: 2.25rem !important;
+  padding: 0.5rem 0.875rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  border-radius: 0.375rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.5rem !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  background-color: #112433 !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #234257 !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.btn-secondary:hover {
+  background-color: #173042 !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+}
+
+/* Table Action Square Icon Buttons (w-7.5 h-7.5) */
+.btn-action-icon,
+.btn-table-action {
+  width: 1.875rem !important;
+  height: 1.875rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 0.25rem !important;
+  background-color: #102230 !important;
+  border: 1px solid #1e3a50 !important;
+  color: #cbd5e1 !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+}
+
+.btn-action-icon:hover,
+.btn-table-action:hover {
+  background-color: rgba(249, 115, 22, 0.2) !important;
+  color: #f97316 !important;
+  border-color: rgba(249, 115, 22, 0.5) !important;
+}
+
+.btn-action-icon.btn-danger:hover,
+.btn-table-action.btn-danger:hover {
+  background-color: rgba(225, 29, 72, 0.2) !important;
+  color: #fb7185 !important;
+  border-color: rgba(225, 29, 72, 0.5) !important;
+}
+
+/* Crisp White Headings & Scaled KPI Numbers */
+h1,
+.page-title {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+}
+
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: #ffffff !important;
+}
+
+/* KPI Card value truncation & responsive font size clamp */
+.kpi-num,
+[class*="border-l-4"] .text-2xl,
+[class*="border-l-4"] .text-3xl,
+[class*="border-s-4"] .text-2xl,
+[class*="border-s-4"] .text-3xl,
+.card-accent-rule .text-2xl,
+.card-accent-rule .text-3xl {
+  font-size: clamp(1.25rem, 1.8vw, 1.75rem) !important;
+  line-height: 1.25 !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  font-family: "IBM Plex Mono", monospace !important;
+  letter-spacing: -0.02em !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Global Layout Containment to Eliminate Horizontal Page Overflow */
+main {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow-x: hidden !important;
+}
+
+/* Responsive Table Wrapper Containment */
+.overflow-x-auto,
+.custom-scrollbar {
+  max-width: 100% !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #1e3a50 #071018 !important;
+}
+
+/* Universal Search Container & Icon Rules */
+/* Flex search container: icon stays in normal flex flow with guaranteed zero overlap */
+.flex-search-box,
+.relative.flex.items-center {
+  display: flex !important;
+  align-items: center !important;
+  background-color: #07111a !important;
+
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+}
+
+.flex-search-box:focus-within,
+.relative.flex.items-center:focus-within {
+  border-color: #f97316 !important;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4) !important;
+}
+
+.flex-search-box > [data-lucide="search"],
+.flex-search-box > svg.lucide-search,
+.relative.flex.items-center > [data-lucide="search"],
+.relative.flex.items-center > svg.lucide-search {
+  position: static !important;
+  transform: none !important;
+  margin-inline-end: 0.625rem !important;
+  flex-shrink: 0 !important;
+  color: #64748b !important;
+  pointer-events: none !important;
+}
+
+/* -------------------------------------------------------------
+   PRECISION FIX: Elimination of Double-Border on Search Inputs
+   ------------------------------------------------------------- */
+div.relative.flex > input,
+div.relative.flex.items-center > input,
+div.flex-search-box > input,
+div[class*="focus-within"] > input,
+input.border-none,
+input.border-0,
+input[class*="border-none"],
+input[class*="border-0"] {
+  border: 0 none transparent !important;
+  border-width: 0 !important;
+  border-style: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  background-color: transparent !important;
+  background: transparent !important;
+  height: 100% !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  width: 100% !important;
+  font-size: 0.75rem !important;
+  color: #f1f5f9 !important;
+}
+
+div.relative.flex > input:focus,
+div.relative.flex.items-center > input:focus,
+div.flex-search-box > input:focus,
+div[class*="focus-within"] > input:focus,
+input.border-none:focus,
+input.border-0:focus,
+input[class*="border-none"]:focus,
+input[class*="border-0"]:focus {
+  border: 0 none transparent !important;
+  border-width: 0 !important;
+  border-style: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  ring: 0 !important;
+}
+
+div.relative.flex > input::placeholder,
+div.relative.flex.items-center > input::placeholder,
+div.flex-search-box > input::placeholder,
+input.border-none::placeholder {
+  color: #64748b !important;
+}
+
+/* For non-flex relative wrappers fallback */
+.relative:not(.flex) > [data-lucide="search"],
+.relative:not(.flex) > svg.lucide-search,
+.relative:not(.flex) > .lucide-search {
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  inset-inline-start: 0.75rem !important;
+  color: #64748b !important;
+  pointer-events: none !important;
+  z-index: 10 !important;
+}
+
+.relative:not(.flex) > input {
+  padding-inline-start: 2.25rem !important; /* 36px clearance */
+  padding-inline-end: 0.75rem !important;
+}
+
+/* Global Progress Bar Tracks - Dark Slate Industrial */
+.progress-track,
+div[class*="rounded-full"][class*="h-1"],
+div[class*="rounded-full"][class*="h-2"] {
+  background-color: #132636 !important;
+}

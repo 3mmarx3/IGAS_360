@@ -1,383 +1,425 @@
 <?php
-session_start();
-require_once '../../config/db.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ui_helpers.php';
+
+require_permission('materials.create');
 
 $active_page = 'raw_materials';
-$base_url    = '../../';
-$breadcrumb  = ['I-GAS', 'Production', 'Raw Materials', 'New Material'];
+$base_url  = '../../';
+$breadcrumb = ['I-GAS', 'Production', 'Raw Materials', 'New Material'];
 
 $errors = [];
 $success_message = '';
 
-$material_name        = '';
-$category              = '';
-$unit                  = '';
-$handling_notes        = '';
-$opening_stock         = '';
+$material_name    = '';
+$category       = '';
+$unit         = '';
+$handling_notes    = '';
+$opening_stock    = '';
+$max_capacity     = '';
 $safety_stock_threshold = '';
-$warehouse_zone        = '';
-$lead_time_days        = '';
-$stock_status          = 'optimal';
-$supplier_id           = '';
-$unit_cost             = '';
+$warehouse_zone    = '';
+$lead_time_days    = '';
+$stock_status     = 'optimal';
+$supplier_id     = '';
+$unit_cost      = '';
+$supplier_reference_id = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+  require_csrf();
 
-    $material_name          = trim($_POST['material_name'] ?? '');
-    $category                = trim($_POST['category'] ?? '');
-    $unit                    = trim($_POST['unit'] ?? '');
-    $handling_notes          = trim($_POST['handling_notes'] ?? '');
-    $opening_stock           = $_POST['opening_stock'] ?? '0';
-    $safety_stock_threshold  = $_POST['safety_stock_threshold'] ?? '';
-    $warehouse_zone          = trim($_POST['warehouse_zone'] ?? '');
-    $lead_time_days          = $_POST['lead_time_days'] ?? '';
-    $stock_status            = $_POST['stock_status'] ?? 'optimal';
-    $supplier_id             = $_POST['supplier_id'] ?? '';
-    $unit_cost               = $_POST['unit_cost'] ?? '';
+  $material_name     = trim($_POST['material_name'] ?? '');
+  $category        = trim($_POST['category'] ?? '');
+  $unit          = trim($_POST['unit'] ?? '');
+  $handling_notes     = trim($_POST['handling_notes'] ?? '');
+  $opening_stock     = $_POST['opening_stock'] ?? '0';
+  $max_capacity      = $_POST['max_capacity'] ?? '0';
+  $safety_stock_threshold = $_POST['safety_stock_threshold'] ?? '';
+  $warehouse_zone     = trim($_POST['warehouse_zone'] ?? '');
+  $lead_time_days     = $_POST['lead_time_days'] ?? '';
+  $stock_status      = $_POST['stock_status'] ?? 'optimal';
+  $supplier_id      = $_POST['supplier_id'] ?? '';
+  $unit_cost       = $_POST['unit_cost'] ?? '';
 
-    if ($material_name === '') {
-        $errors[] = 'Material description / technical name is required.';
+  if ($material_name === '') {
+    $errors[] = 'Material description / technical name is required.';
+  }
+  if ($category === '') {
+    $errors[] = 'Primary supply category is required.';
+  }
+  if ($unit === '') {
+    $errors[] = 'Unit of measure is required.';
+  }
+  if ($safety_stock_threshold === '' || !is_numeric($safety_stock_threshold) || (float)$safety_stock_threshold < 0) {
+    $errors[] = 'Safety stock threshold must be a valid number.';
+  }
+  if ($opening_stock !== '' && (!is_numeric($opening_stock) || (float)$opening_stock < 0)) {
+    $errors[] = 'Initial opening stock level must be a valid number.';
+  }
+  if ($max_capacity !== '' && (!is_numeric($max_capacity) || (float)$max_capacity < 0)) {
+    $errors[] = 'Maximum storage capacity must be a valid number.';
+  }
+  if ($supplier_id === '' || !ctype_digit((string)$supplier_id)) {
+    $errors[] = 'Primary approved supplier is required.';
+  }
+  if ($unit_cost === '' || !is_numeric($unit_cost) || (float)$unit_cost < 0) {
+    $errors[] = 'Standard purchase cost is required and must be a valid number.';
+  }
+  if (!in_array($stock_status, ['optimal', 'low', 'out'], true)) {
+    $stock_status = 'optimal';
+  }
+
+  if ($supplier_id !== '' && ctype_digit((string)$supplier_id)) {
+    $supplierCheck = $pdo->prepare("SELECT id, reference_id FROM partners WHERE id = :id AND partner_type = 'supplier' LIMIT 1");
+    $supplierCheck->execute(['id' => (int)$supplier_id]);
+    $supplierData = $supplierCheck->fetch(PDO::FETCH_ASSOC);
+    if (!$supplierData) {
+      $errors[] = 'Selected supplier is invalid.';
+    } else {
+      $supplier_reference_id = $supplierData['reference_id'];
     }
-    if ($category === '') {
-        $errors[] = 'Primary supply category is required.';
-    }
-    if ($unit === '') {
-        $errors[] = 'Unit of measure is required.';
-    }
-    if ($safety_stock_threshold === '' || !is_numeric($safety_stock_threshold) || (float)$safety_stock_threshold < 0) {
-        $errors[] = 'Safety stock threshold must be a valid number.';
-    }
-    if ($opening_stock !== '' && (!is_numeric($opening_stock) || (float)$opening_stock < 0)) {
-        $errors[] = 'Initial opening stock level must be a valid number.';
-    }
-    if ($supplier_id === '' || !ctype_digit((string)$supplier_id)) {
-        $errors[] = 'Primary approved supplier is required.';
-    }
-    if ($unit_cost === '' || !is_numeric($unit_cost) || (float)$unit_cost < 0) {
-        $errors[] = 'Standard purchase cost is required and must be a valid number.';
-    }
-    if (!in_array($stock_status, ['optimal', 'low', 'out'], true)) {
-        $stock_status = 'optimal';
+  }
+
+  if (empty($errors)) {
+    $opening_stock_val = $opening_stock !== '' ? (float)$opening_stock : 0;
+    $max_capacity_val = $max_capacity !== '' ? (float)$max_capacity : 0;
+    $material_sku = 'RM-' . random_int(1008, 1999);
+
+    $skuCheck = $pdo->prepare("SELECT id FROM raw_materials WHERE material_sku = :sku LIMIT 1");
+    $skuCheck->execute(['sku' => $material_sku]);
+    while ($skuCheck->fetch()) {
+      $material_sku = 'RM-' . random_int(1008, 9999);
+      $skuCheck->execute(['sku' => $material_sku]);
     }
 
-    if ($supplier_id !== '' && ctype_digit((string)$supplier_id)) {
-        $supplierCheck = $pdo->prepare("SELECT id FROM partners WHERE id = :id AND partner_type = 'supplier' LIMIT 1");
-        $supplierCheck->execute(['id' => (int)$supplier_id]);
-        if (!$supplierCheck->fetch()) {
-            $errors[] = 'Selected supplier is invalid.';
-        }
+    try {
+      $pdo->beginTransaction();
+
+      $insert = $pdo->prepare("
+        INSERT INTO raw_materials
+          (material_sku, material_name, category, unit, handling_notes,
+           opening_stock, current_stock, max_capacity, safety_stock_threshold, warehouse_zone,
+           lead_time_days, stock_status, supplier_id, unit_cost)
+        VALUES
+          (:material_sku, :material_name, :category, :unit, :handling_notes,
+           :opening_stock, :current_stock, :max_capacity, :safety_stock_threshold, :warehouse_zone,
+           :lead_time_days, :stock_status, :supplier_id, :unit_cost)
+      ");
+
+      $insert->execute([
+        'material_sku'      => $material_sku,
+        'material_name'      => $material_name,
+        'category'        => $category,
+        'unit'          => $unit,
+        'handling_notes'     => $handling_notes !== '' ? $handling_notes : null,
+        'opening_stock'      => $opening_stock_val,
+        'current_stock'      => $opening_stock_val,
+        'max_capacity'      => $max_capacity_val,
+        'safety_stock_threshold' => (float)$safety_stock_threshold,
+        'warehouse_zone'     => $warehouse_zone !== '' ? $warehouse_zone : null,
+        'lead_time_days'     => $lead_time_days !== '' ? (int)$lead_time_days : null,
+        'stock_status'      => $stock_status,
+        'supplier_id'       => (int)$supplier_id,
+        'unit_cost'        => (float)$unit_cost,
+      ]);
+
+      $insertSupplierProduct = $pdo->prepare("
+        INSERT INTO supplier_products (
+          supplier_reference, item_code, item_name, category, quantity, unit, unit_price, currency, lead_time_days
+        ) VALUES (
+          :supplier_reference, :item_code, :item_name, :category, 1.00, :unit, :unit_price, 'SAR', :lead_time_days
+        )
+      ");
+
+      $insertSupplierProduct->execute([
+        'supplier_reference' => $supplier_reference_id,
+        'item_code'     => $material_sku,
+        'item_name'     => $material_name,
+        'category'      => $category,
+        'unit'        => $unit,
+        'unit_price'     => (float)$unit_cost,
+        'lead_time_days'   => $lead_time_days !== '' ? (int)$lead_time_days : 0
+      ]);
+
+      $pdo->commit();
+      redirect(app_url('modules/production/raw_materials.php?created=1'));
+
+    } catch (Exception $e) {
+      $pdo->rollBack();
+      $errors[] = "Failed to save material and link it to the supplier: " . $e->getMessage();
     }
-
-    if (empty($errors)) {
-        $opening_stock_val = $opening_stock !== '' ? (float)$opening_stock : 0;
-        $material_sku = 'RM-' . random_int(1008, 1999);
-
-        $skuCheck = $pdo->prepare("SELECT id FROM raw_materials WHERE material_sku = :sku LIMIT 1");
-        $skuCheck->execute(['sku' => $material_sku]);
-        while ($skuCheck->fetch()) {
-            $material_sku = 'RM-' . random_int(1008, 9999);
-            $skuCheck->execute(['sku' => $material_sku]);
-        }
-
-        $insert = $pdo->prepare("
-            INSERT INTO raw_materials
-                (material_sku, material_name, category, unit, handling_notes,
-                 opening_stock, current_stock, safety_stock_threshold, warehouse_zone,
-                 lead_time_days, stock_status, supplier_id, unit_cost)
-            VALUES
-                (:material_sku, :material_name, :category, :unit, :handling_notes,
-                 :opening_stock, :current_stock, :safety_stock_threshold, :warehouse_zone,
-                 :lead_time_days, :stock_status, :supplier_id, :unit_cost)
-        ");
-
-        $insert->execute([
-            'material_sku'            => $material_sku,
-            'material_name'           => $material_name,
-            'category'                => $category,
-            'unit'                    => $unit,
-            'handling_notes'          => $handling_notes !== '' ? $handling_notes : null,
-            'opening_stock'           => $opening_stock_val,
-            'current_stock'           => $opening_stock_val,
-            'safety_stock_threshold'  => (float)$safety_stock_threshold,
-            'warehouse_zone'          => $warehouse_zone !== '' ? $warehouse_zone : null,
-            'lead_time_days'          => $lead_time_days !== '' ? (int)$lead_time_days : null,
-            'stock_status'            => $stock_status,
-            'supplier_id'             => (int)$supplier_id,
-            'unit_cost'               => (float)$unit_cost,
-        ]);
-
-        header('Location: raw_materials.php?created=1');
-        exit;
-    }
+  }
 }
 
 $new_material_id = 'RM-' . rand(1008, 1999);
 
 $suppliers = $pdo->query("
-    SELECT id, company_name, reference_id
-    FROM partners
-    WHERE partner_type = 'supplier' AND status = 'approved'
-    ORDER BY company_name ASC
+  SELECT id, company_name, reference_id
+  FROM partners
+  WHERE partner_type = 'supplier' AND status = 'approved'
+  ORDER BY company_name ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars($_SESSION['lang'] ?? 'en') ?>" dir="<?= ($_SESSION['lang'] ?? 'en') === 'ar' ? 'rtl' : 'ltr' ?>" class="h-full">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Material Entry | I-GAS Enterprise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --ink: #1A1A1A;
-            --ink-soft: #2E2E2E;
-            --paper: #FFFFFF;
-            --paper-dim: #F7F7F6;
-            --paper-deep: #EFEEEC;
-            --line: #D8D6D1;
-            --line-soft: #E7E5E1;
-            --accent: #9A7B2E;
-            --accent-soft: #FBF3DF;
-            --mute: #767470;
-            --mute-soft: #A6A39D;
-            --sidebar: #1A1A1A;
-            --sidebar-line: #2E2E2E;
-            --sidebar-text: #B8B6B1;
-        }
-        * { box-sizing: border-box; }
-        html { font-size: 16px; }
-        body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: var(--paper-dim);
-            color: var(--ink);
-            font-feature-settings: "tnum" 1;
-        }
-        .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
-        .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #D4D2CC; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
-        a, button { -webkit-tap-highlight-color: transparent; }
-
-        .nav-row { position: relative; border-left: 2px solid transparent; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-        .nav-row.active { border-left-color: var(--accent); background-color: rgba(255,255,255,0.04); color: #FFFFFF; }
-        .nav-row:not(.active):hover { background-color: rgba(255,255,255,0.03); color: #FFFFFF; }
-
-        .card { background: var(--paper); border: 1px solid var(--line-soft); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-        .btn-primary { background: var(--ink); color: var(--paper); transition: background-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; border: 1px solid var(--ink); cursor: pointer; }
-        .btn-primary:hover { background: var(--ink-soft); }
-        .btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); transition: background-color 0.15s ease, border-color 0.15s ease; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
-        .btn-secondary:hover { background: var(--paper-dim); border-color: var(--mute-soft); }
-
-        .form-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mute); margin-bottom: 6px; }
-        .form-input, .form-select { width: 100%; border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); background: var(--paper); transition: border-color 0.15s ease; outline: none; }
-        .form-input:focus, .form-select:focus { border-color: var(--ink); }
-        .form-input::placeholder { color: var(--mute-soft); }
-        .form-input:disabled { background: var(--paper-deep); color: var(--mute); cursor: not-allowed; border-color: var(--line-soft); }
-
-        .input-group { position: relative; display: flex; align-items: center; }
-        .input-icon { position: absolute; left: 12px; color: var(--mute-soft); pointer-events: none; }
-        .has-icon { padding-left: 36px; }
-
-        .alert-box { border-radius: 4px; padding: 12px 16px; font-size: 13px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 10px; }
-        .alert-error { background: #F8E9E7; color: #963B33; border: 1px solid #E3C9C6; }
-        .alert-error ul { margin: 4px 0 0 0; padding-left: 18px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-en="New Material Entry | I-GAS Enterprise" data-ar="إدخال مادة جديدة | I-GAS Enterprise">New Material Entry | I-GAS Enterprise</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oxanium:wght@500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="<?= app_url('assets/css/theme.css') ?>">
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="flex h-screen overflow-hidden antialiased">
+<body class="flex h-screen overflow-hidden antialiased bg-[#071018] font-sans text-slate-100 selection:bg-orange-500/20 selection:text-orange-400">
 
-<?php include '../../includes/aside.php'; ?>
+  <?php include __DIR__ . '/../../includes/aside.php'; ?>
 
-    <main class="flex-1 flex flex-col min-w-0">
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#071018]">
 
-    <?php include '../../includes/header.php'; ?>
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
 
-        <div class="h-9 border-b flex items-center px-8 gap-6 flex-shrink-0" style="background: var(--paper-deep); border-color: var(--line-soft);">
-            <span class="flex items-center gap-2 text-[11px] font-medium mono uppercase tracking-wide" style="color: var(--ink);">
-                <span class="status-dot" style="background: #5C8A5C;"></span>System Nominal
-            </span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Plant — Jeddah Industrial</span>
-            <span class="w-px h-3" style="background: var(--line);"></span>
-            <span class="text-[11px] mono uppercase tracking-wide" style="color: var(--mute);">Shift B · 14:00–22:00</span>
+    <!-- Telemetry Status Bar -->
+    <div class="h-9 border-b border-[#152938] bg-[#060e14] text-slate-400 px-4 sm:px-6 flex items-center justify-between text-xs font-mono text-slate-400">
+      <div class="flex items-center gap-4 overflow-x-auto no-scrollbar">
+        <span class="flex items-center gap-1.5 font-medium text-teal-400 dark:text-teal-400">
+          <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+          <span data-en="SYS: NOMINAL" data-ar="النظام: مستقر">SYS: NOMINAL</span>
+        </span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span data-en="FEEDSTOCK ASSET CATALOG REGISTRATION" data-ar="تسجيل أصل مواد خام جديد">FEEDSTOCK ASSET CATALOG REGISTRATION</span>
+        <span class="text-neutral-300 dark:text-neutral-700">|</span>
+        <span class="font-mono text-neutral-500">ASSIGNED SKU: <?= htmlspecialchars($new_material_id) ?></span>
+      </div>
+      <div class="hidden sm:flex items-center gap-3">
+        <span class="text-[11px] text-neutral-400 font-mono">PLANT — JEDDAH HUB</span>
+      </div>
+    </div>
+
+    <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
+
+      <!-- Breadcrumb Navigation & Top Action -->
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-[#1a3346]">
+        <div>
+          <div class="flex items-center gap-2 mb-1.5 text-xs font-mono text-neutral-500">
+            <a href="<?= app_url('modules/production/raw_materials.php') ?>" class="hover:text-teal-600 dark:hover:text-teal-400 transition-colors uppercase tracking-wider" data-en="Raw Materials" data-ar="المواد الخام">
+              Raw Materials
+            </a>
+            <i data-lucide="chevron-right" class="w-3 h-3 text-neutral-400 rtl:rotate-180"></i>
+            <span class="text-teal-600 dark:text-teal-400 uppercase tracking-wider font-semibold" data-en="Inventory Entry" data-ar="تسجيل عنصر جديد">Inventory Entry</span>
+          </div>
+          <h1 class="text-2xl font-bold font-mono tracking-tight text-white" data-en="Add Raw Material" data-ar="إضافة مادة خام">
+            Add Raw Material
+          </h1>
+          <p class="text-xs font-mono text-neutral-500 mt-1" data-en="Register bulk gases, process chemical reagents, or cylinder valve hardware to inventory control." data-ar="تسجيل الغازات السائبة أو الكواشف الكيميائية أو صمامات الأسطوانات في مراقبة المخزون.">
+            Register bulk gases, process chemical reagents, or cylinder valve hardware to inventory control.
+          </p>
         </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <a href="<?= app_url('modules/production/raw_materials.php') ?>" class="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-mono uppercase tracking-wider bg-[#112433] border border-[#1e3a50] hover:bg-[#102332] dark:hover:bg-neutral-750 text-slate-200 rounded-sm">
+            <span data-en="Cancel" data-ar="إلغاء">Cancel</span>
+          </a>
+          <button type="submit" form="new-material-form" class="btn-cta-orange inline-flex items-center gap-2 px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-sm">
+            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+            <span data-en="Save Material Item" data-ar="حفظ عنصر المادة">Save Material Item</span>
+          </button>
+        </div>
+      </div>
 
-        <div class="flex-1 overflow-auto px-8 py-7">
+      <?php if (!empty($errors)): ?>
+      <div class="p-4 border border-rose-800 dark:border-rose-900 bg-rose-950/30 dark:bg-rose-950/40 text-rose-400 dark:text-rose-400 rounded-sm text-xs font-mono space-y-1">
+        <div class="flex items-center gap-2 font-bold mb-1">
+          <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+          <span data-en="Unable to register material:" data-ar="تعذر تسجيل المادة:">Unable to register material:</span>
+        </div>
+        <ul class="list-disc list-inside space-y-1 pl-2">
+          <?php foreach ($errors as $err): ?>
+          <li><?= htmlspecialchars($err) ?></li>
+          <?php endforeach; ?>
+        </ul>
+      </div>
+      <?php endif; ?>
 
-            <div class="flex justify-between items-end mb-7">
+      <form id="new-material-form" action="<?= app_url('modules/production/new_material.php') ?>" method="POST">
+        <?= csrf_field() ?>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Left 2 Cols: Item Specification & Logistics -->
+          <div class="lg:col-span-2 space-y-6">
+            <!-- Specification Card -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm p-5 border-s-4 border-s-[#f97316] space-y-5">
+              <h2 class="text-sm font-mono font-bold uppercase tracking-wider text-white pb-3 border-b border-[#1a3346] flex items-center gap-2">
+                <i data-lucide="package" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+                <span data-en="1. Item Specification & Physical Properties" data-ar="1. مواصفات العنصر والخصائص الفيزيائية">1. Item Specification & Physical Properties</span>
+              </h2>
+
+              <div class="space-y-4">
                 <div>
-                    <div class="flex items-center gap-2 mb-2">
-                        <a href="raw_materials.php" class="text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors" style="color: var(--mute); text-decoration: none;">Raw Materials</a>
-                        <i data-lucide="chevron-right" class="w-3 h-3 text-[var(--mute-soft)]"></i>
-                        <span class="text-[11px] font-semibold uppercase tracking-[0.14em]" style="color: var(--ink);">Inventory Entry</span>
-                    </div>
-                    <h2 class="text-[26px] font-semibold tracking-tight leading-none" style="color: var(--ink);">Add Raw Material</h2>
-                    <p class="text-[13.5px] mt-2.5" style="color: var(--mute);">Introduce new bulk gas assets, production chemical components, or containment items to stock control.</p>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Material Description / Technical Name *" data-ar="اسم المادة الفني / الوصف *">
+                    Material Description / Technical Name *
+                  </label>
+                  <input type="text" name="material_name" class="w-full px-3 py-2 text-xs font-mono bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" placeholder="e.g. Liquid Oxygen (LOX) 99.999% Grade 5.0" value="<?= htmlspecialchars($material_name) ?>" required>
                 </div>
-                <div class="flex gap-3">
-                    <a href="raw_materials.php" class="btn-secondary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
-                        Cancel
-                    </a>
-                    <button type="submit" form="new-material-form" class="btn-primary px-4 py-2.5 rounded-sm text-[13.5px] font-medium gap-2">
-                        <i data-lucide="save" class="w-4 h-4"></i>Save Material Item
-                    </button>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Primary Supply Category *" data-ar="فئة التوريد *">
+                      Primary Supply Category *
+                    </label>
+                    <select name="category" class="w-full px-3 py-2 text-xs font-mono bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" required>
+                      <option value="" <?= $category === '' ? 'selected' : '' ?> disabled data-en="Select category..." data-ar="اختر الفئة...">Select category...</option>
+                      <option value="Bulk Gas" <?= $category === 'Bulk Gas' ? 'selected' : '' ?> data-en="Bulk Gas" data-ar="الغاز السائب">Bulk Gas</option>
+                      <option value="Chemicals" <?= $category === 'Chemicals' ? 'selected' : '' ?> data-en="Chemicals" data-ar="المواد الكيميائية">Chemicals</option>
+                      <option value="Containers" <?= $category === 'Containers' ? 'selected' : '' ?> data-en="Containers / Cylinders" data-ar="الحاويات / الأسطوانات">Containers / Cylinders</option>
+                      <option value="Spare Parts" <?= $category === 'Spare Parts' ? 'selected' : '' ?> data-en="Spare Parts & Valves" data-ar="قطع الغيار والصمامات">Spare Parts & Valves</option>
+                      <option value="Consumables" <?= $category === 'Consumables' ? 'selected' : '' ?> data-en="Consumables" data-ar="المواد الاستهلاكية">Consumables</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Unit of Measure (UoM) *" data-ar="وحدة القياس *">
+                      Unit of Measure (UoM) *
+                    </label>
+                    <select name="unit" class="w-full px-3 py-2 text-xs font-mono bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" required>
+                      <option value="" <?= $unit === '' ? 'selected' : '' ?> disabled data-en="Select unit..." data-ar="اختر الوحدة...">Select unit...</option>
+                      <option value="Liters" <?= $unit === 'Liters' ? 'selected' : '' ?> data-en="Liters (L)" data-ar="لتر (L)">Liters (L)</option>
+                      <option value="KG" <?= $unit === 'KG' ? 'selected' : '' ?> data-en="Kilograms (KG)" data-ar="كيلوجرام (KG)">Kilograms (KG)</option>
+                      <option value="Units" <?= $unit === 'Units' ? 'selected' : '' ?> data-en="Units (Pcs)" data-ar="وحدات (قطع)">Units (Pcs)</option>
+                      <option value="Gallons" <?= $unit === 'Gallons' ? 'selected' : '' ?> data-en="Gallons (Gal)" data-ar="جالون (Gal)">Gallons (Gal)</option>
+                      <option value="Metric Tons" <?= $unit === 'Metric Tons' ? 'selected' : '' ?> data-en="Metric Tons (T)" data-ar="طن متري (T)">Metric Tons (T)</option>
+                    </select>
+                  </div>
                 </div>
+
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Internal Handling & Storage Protocol" data-ar="بروتوكول المناولة والتخزين الداخلي">
+                    Internal Handling & Storage Protocol
+                  </label>
+                  <textarea name="handling_notes" class="w-full px-3 py-2 text-xs font-mono bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500 resize-none" rows="3" placeholder="Enter cryogenic temperatures, vacuum jacket requirements, hazmat classification, or tank pressure limits..."><?= htmlspecialchars($handling_notes) ?></textarea>
+                </div>
+              </div>
             </div>
 
-            <?php if (!empty($errors)): ?>
-            <div class="alert-box alert-error">
-                <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0 mt-0.5"></i>
+            <!-- Capacity & Threshold Card -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm p-5 space-y-5 border-s-4 border-s-[#f97316]">
+              <h2 class="text-sm font-mono font-bold uppercase tracking-wider text-white pb-3 border-b border-[#1a3346] flex items-center gap-2">
+                <i data-lucide="gauge" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+                <span data-en="2. Capacity Limits & Safety Thresholds" data-ar="2. حدود السعة ومستويات الأمان">2. Capacity Limits & Safety Thresholds</span>
+              </h2>
+
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                    <strong>Couldn't save the material:</strong>
-                    <ul>
-                        <?php foreach ($errors as $err): ?>
-                        <li><?= htmlspecialchars($err) ?></li>
-                        <?php endforeach; ?>
-                    </ul>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Initial Opening Stock" data-ar="المخزون الافتتاحي">
+                    Initial Opening Stock
+                  </label>
+                  <input type="number" name="opening_stock" class="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" placeholder="0" min="0" step="0.01" value="<?= htmlspecialchars((string)$opening_stock) ?>">
                 </div>
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Max Storage Capacity" data-ar="السعة القصوى">
+                    Max Storage Capacity
+                  </label>
+                  <input type="number" name="max_capacity" class="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" placeholder="20000" min="0" step="0.01" value="<?= htmlspecialchars((string)$max_capacity) ?>">
+                </div>
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Safety Alert Threshold *" data-ar="حد التنبيه الحرج *">
+                    Safety Alert Threshold *
+                  </label>
+                  <input type="number" name="safety_stock_threshold" class="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" placeholder="5000" min="0" step="0.01" value="<?= htmlspecialchars((string)$safety_stock_threshold) ?>" required>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Assigned Tank / Zone" data-ar="المنطقة أو الخزان المخصص">
+                    Assigned Tank / Zone
+                  </label>
+                  <input type="text" name="warehouse_zone" class="w-full px-3 py-2 text-xs font-mono bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" placeholder="e.g. Tank Farm Vessel T-101" value="<?= htmlspecialchars($warehouse_zone) ?>">
+                </div>
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Replenishment Lead Time (Days)" data-ar="مهلة التوريد (بالأيام)">
+                    Replenishment Lead Time (Days)
+                  </label>
+                  <input type="number" name="lead_time_days" class="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" placeholder="e.g. 5" min="0" value="<?= htmlspecialchars((string)$lead_time_days) ?>">
+                </div>
+              </div>
             </div>
-            <?php endif; ?>
+          </div>
 
-            <form id="new-material-form" action="new_material.php" method="POST">
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    
-                    <div class="lg:col-span-2 flex flex-col gap-6">
-                        
-                        <div class="card rounded-md p-6">
-                            <h3 class="text-[14px] font-semibold tracking-tight mb-5 pb-4 border-b flex items-center gap-2" style="color: var(--ink); border-color: var(--line-soft);">
-                                <i data-lucide="package" class="w-4 h-4" style="color: var(--mute);"></i>Item Specification
-                            </h3>
-                            
-                            <div class="grid grid-cols-2 gap-5">
-                                <div class="col-span-2">
-                                    <label class="form-label">Material Description / Technical Name</label>
-                                    <input type="text" name="material_name" class="form-input" placeholder="e.g. Liquid Oxygen (LOX), Brass Valves, Acetone" value="<?= htmlspecialchars($material_name) ?>" required>
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Primary Supply Category</label>
-                                    <select name="category" class="form-select" required>
-                                        <option value="" <?= $category === '' ? 'selected' : '' ?> disabled>Select primary classification...</option>
-                                        <option value="Bulk Gas" <?= $category === 'Bulk Gas' ? 'selected' : '' ?>>Bulk Gas</option>
-                                        <option value="Chemicals" <?= $category === 'Chemicals' ? 'selected' : '' ?>>Chemicals</option>
-                                        <option value="Containers" <?= $category === 'Containers' ? 'selected' : '' ?>>Containers / Cylinders</option>
-                                        <option value="Spare Parts" <?= $category === 'Spare Parts' ? 'selected' : '' ?>>Spare Parts &amp; Valves</option>
-                                        <option value="Consumables" <?= $category === 'Consumables' ? 'selected' : '' ?>>Consumables</option>
-                                    </select>
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Unit of Measure (UoM)</label>
-                                    <select name="unit" class="form-select" required>
-                                        <option value="" <?= $unit === '' ? 'selected' : '' ?> disabled>Select engineering metrics...</option>
-                                        <option value="Liters" <?= $unit === 'Liters' ? 'selected' : '' ?>>Liters (L)</option>
-                                        <option value="KG" <?= $unit === 'KG' ? 'selected' : '' ?>>Kilograms (KG)</option>
-                                        <option value="Units" <?= $unit === 'Units' ? 'selected' : '' ?>>Units (Pcs)</option>
-                                        <option value="Gallons" <?= $unit === 'Gallons' ? 'selected' : '' ?>>Gallons (Gal)</option>
-                                        <option value="Metric Tons" <?= $unit === 'Metric Tons' ? 'selected' : '' ?>>Metric Tons (T)</option>
-                                    </select>
-                                </div>
-                                <div class="col-span-2">
-                                    <label class="form-label">Internal Handling &amp; Storage Notes</label>
-                                    <textarea name="handling_notes" class="form-input" rows="3" placeholder="Enter special temperature regulations, hazmat protocols, pressure limits or specialized zone criteria..."><?= htmlspecialchars($handling_notes) ?></textarea>
-                                </div>
-                            </div>
-                        </div>
+          <!-- Right 1 Col: Identification & Supplier Binding -->
+          <div class="space-y-6">
+            <!-- Tracking Card -->
+            <div class="bg-[#102230]/60 bg-[#0c1924]/60 border border-[#1a3346] rounded-sm p-5 space-y-4 border-s-4 border-s-[#f97316]">
+              <h2 class="text-sm font-mono font-bold uppercase tracking-wider text-white pb-3 border-b border-[#1a3346] flex items-center gap-2">
+                <i data-lucide="hash" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+                <span data-en="Catalog Code" data-ar="رمز الكتالوج">Catalog Code</span>
+              </h2>
 
-                        <div class="card rounded-md p-6">
-                            <h3 class="text-[14px] font-semibold tracking-tight mb-5 pb-4 border-b flex items-center gap-2" style="color: var(--ink); border-color: var(--line-soft);">
-                                <i data-lucide="refresh-cw" class="w-4 h-4" style="color: var(--mute);"></i>Stock Management &amp; Reorder Logistics
-                            </h3>
-                            
-                            <div class="grid grid-cols-2 gap-5">
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Initial Opening Stock Level</label>
-                                    <input type="number" name="opening_stock" class="form-input mono num" placeholder="0" min="0" value="<?= htmlspecialchars((string)$opening_stock) ?>">
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Safety Stock Threshold (Low Stock Limit)</label>
-                                    <input type="number" name="safety_stock_threshold" class="form-input mono num" placeholder="Trigger alert below this value..." min="0" value="<?= htmlspecialchars((string)$safety_stock_threshold) ?>" required>
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Assigned Warehouse / Tank Farm Zone</label>
-                                    <input type="text" name="warehouse_zone" class="form-input" placeholder="e.g. Cryo Tank A, Shed 3, Zone B" value="<?= htmlspecialchars($warehouse_zone) ?>">
-                                </div>
-                                <div class="col-span-2 md:col-span-1">
-                                    <label class="form-label">Estimated Lead Time (Days)</label>
-                                    <input type="number" name="lead_time_days" class="form-input mono num" placeholder="Days required for replenishment..." min="0" value="<?= htmlspecialchars((string)$lead_time_days) ?>">
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <div class="lg:col-span-1 flex flex-col gap-6">
-                        
-                        <div class="card rounded-md p-6" style="background: var(--paper-deep);">
-                            <h3 class="text-[14px] font-semibold tracking-tight mb-5 pb-4 border-b flex items-center gap-2" style="color: var(--ink); border-color: var(--line-soft);">
-                                <i data-lucide="hash" class="w-4 h-4" style="color: var(--mute);"></i>System Tracking
-                            </h3>
-                            
-                            <div class="flex flex-col gap-5">
-                                <div>
-                                    <label class="form-label">Generated Material SKU / ID</label>
-                                    <input type="text" class="form-input readonly mono num" value="<?= htmlspecialchars($new_material_id) ?>" disabled>
-                                    <p class="text-[11px] mt-1.5" style="color: var(--mute-soft);">Final SKU is assigned automatically on save.</p>
-                                </div>
-                                <div>
-                                    <label class="form-label">Material Status Orientation</label>
-                                    <select name="stock_status" class="form-select">
-                                        <option value="optimal" <?= $stock_status === 'optimal' ? 'selected' : '' ?>>In Stock / Active</option>
-                                        <option value="low" <?= $stock_status === 'low' ? 'selected' : '' ?>>Low Stock / Reorder Initiated</option>
-                                        <option value="out" <?= $stock_status === 'out' ? 'selected' : '' ?>>Out of Stock</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card rounded-md p-6">
-                            <h3 class="text-[14px] font-semibold tracking-tight mb-5 pb-4 border-b flex items-center gap-2" style="color: var(--ink); border-color: var(--line-soft);">
-                                <i data-lucide="shield-alert" class="w-4 h-4" style="color: var(--mute);"></i>Procurement &amp; Finance
-                            </h3>
-                            
-                            <div class="flex flex-col gap-5">
-                                <div>
-                                    <label class="form-label">Primary Approved Supplier</label>
-                                    <select name="supplier_id" class="form-select" required>
-                                        <option value="" <?= $supplier_id === '' ? 'selected' : '' ?> disabled>Bind reliable vendor...</option>
-                                        <?php foreach ($suppliers as $sup): ?>
-                                        <option value="<?= (int)$sup['id'] ?>" <?= ((string)$supplier_id === (string)$sup['id']) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($sup['company_name']) ?> (<?= htmlspecialchars($sup['reference_id']) ?>)
-                                        </option>
-                                        <?php endforeach; ?>
-                                        <?php if (empty($suppliers)): ?>
-                                        <option value="" disabled>No approved suppliers found</option>
-                                        <?php endif; ?>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="form-label">Standard Purchase Cost (Per Unit)</label>
-                                    <div class="input-group">
-                                        <span class="absolute left-3 text-[12px] font-semibold mono" style="color: var(--mute);">SAR</span>
-                                        <input type="number" step="0.01" name="unit_cost" class="form-input num pl-12" placeholder="0.00" value="<?= htmlspecialchars((string)$unit_cost) ?>" required>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Assigned SKU" data-ar="رمز الصنف">
+                    Assigned SKU
+                  </label>
+                  <input type="text" class="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#112433] border border-[#1e3a50] rounded-sm text-slate-400 font-semibold cursor-not-allowed" value="<?= htmlspecialchars($new_material_id) ?>" disabled>
+                  <span class="text-[10px] font-mono text-neutral-400 block mt-1" data-en="Auto-generated unique inventory identifier" data-ar="معرف مخزون فريد مُنشأ تلقائيًا">Auto-generated unique inventory identifier</span>
                 </div>
-            </form>
 
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Initial Status Orientation" data-ar="الحالة الأولية للمادة">
+                    Initial Status Orientation
+                  </label>
+                  <select name="stock_status" class="w-full px-3 py-2 text-xs font-mono bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500">
+                    <option value="optimal" <?= $stock_status === 'optimal' ? 'selected' : '' ?> data-en="In Stock / Active" data-ar="متوفر / نشط">In Stock / Active</option>
+                    <option value="low" <?= $stock_status === 'low' ? 'selected' : '' ?> data-en="Low Stock / Reorder Triggered" data-ar="مخزون منخفض / تم بدء إعادة الطلب">Low Stock / Reorder Triggered</option>
+                    <option value="out" <?= $stock_status === 'out' ? 'selected' : '' ?> data-en="Out of Stock" data-ar="نفد من المخزون">Out of Stock</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Procurement Binding Card -->
+            <div class="bg-[#0c1924] border border-[#1a3346] rounded-sm p-5 space-y-4 border-s-4 border-s-[#f97316]">
+              <h2 class="text-sm font-mono font-bold uppercase tracking-wider text-white pb-3 border-b border-[#1a3346] flex items-center gap-2">
+                <i data-lucide="truck" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+                <span data-en="Vendor & Unit Cost" data-ar="المورد وتكلفة الوحدة">Vendor & Unit Cost</span>
+              </h2>
+
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Primary Approved Supplier *" data-ar="المورد المعتمد الأساسي *">
+                    Primary Approved Supplier *
+                  </label>
+                  <select name="supplier_id" class="w-full px-3 py-2 text-xs font-mono bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" required>
+                    <option value="" <?= $supplier_id === '' ? 'selected' : '' ?> disabled data-en="Bind approved vendor..." data-ar="ربط مورد معتمد...">Bind approved vendor...</option>
+                    <?php foreach ($suppliers as $sup): ?>
+                    <option value="<?= (int)$sup['id'] ?>" <?= ((string)$supplier_id === (string)$sup['id']) ? 'selected' : '' ?>>
+                      <?= htmlspecialchars($sup['company_name']) ?> (<?= htmlspecialchars($sup['reference_id']) ?>)
+                    </option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-1.5" data-en="Standard Unit Cost (SAR) *" data-ar="تكلفة الوحدة القياسية (ر.س) *">
+                    Standard Unit Cost (SAR) *
+                  </label>
+                  <input type="number" step="0.01" name="unit_cost" class="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#08131c] bg-[#0c1924] border border-[#1e3a50] rounded-sm text-slate-100 placeholder-slate-500 focus:outline-2 focus:outline-teal-500" placeholder="0.00" value="<?= htmlspecialchars((string)$unit_cost) ?>" required>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-    </main>
+      </form>
 
-    <script>
-        lucide.createIcons();
-    </script>
+    </div>
+  </main>
+
+  <script>
+    lucide.createIcons();
+  </script>
 </body>
 </html>
