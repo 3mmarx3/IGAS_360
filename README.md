@@ -1,123 +1,147 @@
-توثيق نظام I-GAS Enterprise (Enterprise Resource Planning)
-1. قسم الإدارة العليا (Main Module)
-📄 command_center.php (مركز القيادة):
+I-GAS Enterprise Resource Planning (ERP) & CRM System Documentation
 
-الشاشة الرئيسية (Executive Dashboard) للإدارة.
+Overview
 
-عرض أرقام حية (Live Metrics) لإجمالي الإيرادات، الإنتاج اليومي، عدد السيارات المتاحة، والفواتير المتأخرة.
+I-GAS Enterprise is a comprehensive, bilingual (Arabic/English) enterprise resource planning and customer relationship management system engineered specifically for industrial gas manufacturing, supply, and distribution operations. Built on native PHP 8.0+, MySQL 8.0/MariaDB, and styled with Tailwind CSS, the platform delivers real-time operational visibility, granular RBAC security, automated inventory management, and strict data isolation.
 
-أزرار إجراءات سريعة (Quick Actions) لإنشاء أمر بيع أو تسجيل إنتاج أو توجيه سيارة.
+System Modules & Core Architecture
 
-2. قسم المبيعات والعملاء (CRM & Sales Module)
-📄 clients_directory.php (دليل العملاء):
+1. Main Module (الإدارة العليا)
 
-ملف شامل لكل عميل (شركات/أفراد)، السجل التجاري، الرقم الضريبي.
+command_center.php (Executive Dashboard):
 
-سجل التفاعلات (Activity Log) لمعرفة تاريخ التعامل مع العميل.
+Real-time executive dashboard providing high-level operational metrics.
 
-📄 quotations.php (عروض الأسعار):
+Live monitoring of total revenue (MTD), daily production output, active fleet vehicles, and overdue receivables.
 
-إنشاء عروض أسعار بتفاصيل الغازات، الكميات، والأسعار، وتحويلها لـ PDF للإرسال.
+Instant action triggers (Quick Actions) for creating sales orders, logging production shifts, and dispatching vehicles.
 
-📄 purchase_orders.php (أوامر الشراء والبيع):
+2. CRM & Sales Module (قسم المبيعات والعملاء)
 
-تحويل عروض الأسعار لأوامر شغل فعلية (POs).
+clients_directory.php (Clients Directory):
 
-تتبع حالة الأوردر (Draft, Processing, In Transit, Delivered).
+Comprehensive ledger for corporate and individual client profiles, commercial registrations, and tax identification numbers.
 
-📄 collections_invoices.php (التحصيل والفواتير):
+Integrated activity logs tracking historical client interactions and touchpoints.
 
-إصدار الفواتير فور تسليم الطلبيات.
+quotations.php (Quotations):
 
-كشف حساب العميل (Statement of Account).
+Dynamic builder for commercial quotations detailing gas specifications, tiered pricing, and quantities.
 
-تتبع الدفعات وتنبيهات المديونيات المتأخرة.
+One-click PDF generation and export for client transmission.
 
-📄 client_contracts.php (عقود العملاء):
+purchase_orders.php (Purchase & Sales Orders - POs):
 
-تسجيل العقود طويلة الأجل (توريد كميات ثابتة شهرياً).
+Seamless conversion mechanism from approved quotations to active purchase and sales orders.
 
-تنبيهات قبل انتهاء مدة العقد.
+Lifecycle tracking across operational states: Draft, Processing, In Transit, and Delivered.
 
-3. قسم الإنتاج (Production Module)
-📄 suppliers_directory.php (دليل الموردين):
+collections_invoices.php (Collections & Invoices):
 
-بيانات موردي المواد الخام (مثل: سابك، Air Products، إلخ).
+Automated financial ledger issuing tax invoices immediately upon order fulfillment.
 
-📄 raw_materials.php (المواد الخام):
+Client Statement of Account generation and tracking of remittance payments.
 
-تسجيل استلام المواد الخام السائلة أو الصلبة (مثل كربيد الكالسيوم).
+Automated aging reports and alerts for overdue receivables.
 
-نظام تحويل الوحدات (الطن، اللتر، الجالون، الكيلوجرام).
+client_contracts.php (Client Contracts & SLAs):
 
-📄 cylinders_inventory.php (مخزون الأسطوانات):
+Management of long-term take-or-pay supply agreements and fixed monthly commitments.
 
-تتبع الأسطوانات وأحجامها المختلفة (40، 50، 10 لتر).
+Proactive expiration warning triggers prior to contract milestone dates.
 
-تسجيل الأسطوانات الفارغة (المرتجعة) والمليئة (الجاهزة للبيع).
+3. Production & Inventory Module (قسم الإنتاج والمخزون)
 
-📄 daily_log_shifts.php (سجل الإنتاج اليومي والورديات):
+suppliers_directory.php (Suppliers Directory):
 
-تسجيل الإنتاج مقسماً على الورديات (Shifts).
+Centralized directory for raw material suppliers (e.g., SABIC, Air Products).
 
-إدخال معاملات الضغط للأسطوانات (مثل 2000 PSI أو 3000 PSI) وتأثيرها على كمية الغاز المسحوبة من الخزان.
+raw_materials.php (Raw Materials):
 
-الخصم التلقائي (Inventory Deduction) من الخزانات الرئيسية فور تسجيل الإنتاج.
+Tracking receipts of liquid and solid raw materials (e.g., Calcium Carbide, cryogenic bulk gases).
 
-📄 gases_mixtures.php (الغازات والخلطات):
+Built-in multi-unit conversion engine supporting metric tons, liters, gallons, and kilograms.
 
-إدارة أكتر من 64 نوع غاز مختلف.
+cylinders_inventory.php (Cylinders Inventory):
 
-وحدة "الغازات المخلوطة" لحساب استهلاك كل غاز خام منفرد عند إنتاج خلطة معينة (مثل خلط الميثان مع الهواء).
+High-precision asset tracking for high-pressure cylinders across varying volumetric tiers (10L, 40L, 50L).
 
-📄 yield_loss_reports.php (تقارير الهالك والزيادة):
+Segregation and real-time ledger balance for empty (returned) versus full (ready-for-sale) cylinder inventories.
 
-مقارنة الإنتاج النظري (المتوقع من الخزان) بالإنتاج الفعلي.
+daily_log_shifts.php (Daily Shift Logs):
 
-حساب العجز (Losses) أو الزيادة الناتجة عن بواقي الغاز في الأسطوانات المرتجعة، وحساب التكلفة لصافي الربح.
+Shift-based production logging (Shift A, Shift B, Shift C).
 
-4. قسم اللوجستيات والأسطول (Logistics & Fleet Module)
-📄 vehicles_fleet.php (أسطول السيارات):
+Pressure parameter ingestion (e.g., 2000 PSI or 3000 PSI) calculating exact gas mass evacuated from bulk storage tanks.
 
-تسجيل السيارات، الحمولة القصوى لكل سيارة، وتتبع حالتها الحية.
+Automated inventory reduction (Inventory Deduction) from primary storage tanks upon shift submission.
 
-📄 drivers_directory.php (دليل السائقين):
+gases_mixtures.php (Gases & Mixtures):
 
-ملفات السائقين، تقييم الأداء، وربط السائق بالسيارة كعهدة.
+Management repository supporting over 64 distinct industrial and medical gas profiles.
 
-📄 dispatch_delivery.php (التوجيه والتسليم):
+Advanced blending calculation engine computing individual raw gas consumption ratios for custom mixtures (e.g., methane-air calibration mixes).
 
-إصدار أوامر الشغل (Trip Tickets) وأذون التسليم (Delivery Notes).
+yield_loss_reports.php (Yield & Loss Reports):
 
-تتبع خروج السيارات لرحلات التسليم.
+Comparative analytics measuring theoretical production (tank depletion baseline) against actual packed yield.
 
-📄 maintenance_fuel.php (الصيانة والوقود):
+Automated loss/variance calculation accounting for residual heel gases in returned cylinders and financial impact on net profit margins.
 
-سجل الأعطال المفاجئة وتكلفة إصلاحها.
+4. Logistics & Fleet Module (قسم اللوجستيات والأسطول)
 
-متابعة مسحوبات الوقود وربطها بالمسافات المقطوعة.
+vehicles_fleet.php (Vehicles Fleet):
 
-📄 odometers_tires.php (العدادات والإطارات):
+Fleet registry recording maximum payload capacities, volumetric limits, and real-time operational status.
 
-تسجيل قراءات عداد الكيلومترات (Odometers).
+drivers_directory.php (Drivers Directory):
 
-تتبع دورة حياة الإطارات (الكفرات) بناءً على الكيلومترات للتنبيه قبل التلف.
+Driver personnel files, safety performance evaluations, and asset-custody vehicle assignments.
 
-📄 licenses_alerts.php (تنبيهات التراخيص):
+dispatch_delivery.php (Dispatch & Delivery):
 
-شاشة إنذار مبكر لتواريخ انتهاء (رخص السيارات، رخص السائقين، الفحص الدوري، التأمين).
+Trip ticket generation and official Delivery Note issuance.
 
-5. قسم الرؤى والتحليلات (Insights Module)
-📄 analytics.php (التحليلات):
+Real-time dispatch monitoring for outbound delivery runs.
 
-تقارير سنوية وشهرية مدعومة برسوم بيانية لمقارنة الأرباح، الإنتاج، ومصاريف الأسطول.
+maintenance_fuel.php (Maintenance & Fuel):
 
-📄 compliance.php (المطابقة والسلامة):
+Unplanned breakdown logging, maintenance work orders, and repair cost accounting.
 
-تتبع تواريخ فحص الأسطوانات واختبارات الضغط لضمان السلامة والجودة.
+Fuel consumption telemetry linked directly against distance traveled metrics.
 
-📄 system_settings.php (إعدادات النظام):
+odometers_tires.php (Odometers & Tires):
 
-التحكم في صلاحيات المستخدمين (Roles).
+Periodic odometer mileage logging.
 
-إضافة أنواع سيارات، غازات، أو ضبط معادلات التحويل الحسابية في النظام.
+Lifecycle monitoring and wear-and-tear projections for vehicle tires based on cumulative kilometers.
+
+licenses_alerts.php (Licenses & Compliance Alerts):
+
+Early-warning automated alert console for regulatory expiration dates (vehicle registrations, driver licenses, periodic safety inspections, and commercial insurance).
+
+5. Insights & Analytics Module (قسم الرؤى والتحليلات)
+
+analytics.php (Analytics Cockpit):
+
+Advanced monthly and annual business intelligence reporting featuring graphical visualizers for profitability trends, output volume, and fleet overhead.
+
+compliance.php (Compliance & Safety):
+
+Cylinder recertification tracking, hydrostatic pressure test schedules, and quality assurance audit logs ensuring strict industrial compliance.
+
+system_settings.php (System Settings & RBAC):
+
+Granular Role-Based Access Control (RBAC) management defining permissions across departments.
+
+Global configuration parameters for vehicle categories, gas dictionaries, and mathematical conversion formulas.
+
+Technical Specifications & Deployment Environment
+
+Backend: Native PHP 8.0 / 8.5 (Strict typing and robust error handling).
+
+Database: MySQL 8.0 / MariaDB 10.5+ (InnoDB storage engine with utf8mb4 collation supporting Arabic Cairo typography).
+
+Frontend: Tailwind CSS, responsive layouts, dark industrial UI theme (#071018 / #0c1924 / #f97316).
+
+Security Standards: Deny-by-default access control, parameterized PDO queries, strict anti-CSRF token validation, and multi-tier role verification.
